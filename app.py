@@ -45,11 +45,14 @@ Contract:
 """
 
 # GPT Analysis
+from openai import OpenAI
+client = OpenAI()
+
 def analyze_contract(text):
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {"role": "user", "content": PROMPT_TEMPLATE + text[:8000]}  # Limit to avoid token overflow
+            {"role": "user", "content": PROMPT_TEMPLATE + text[:8000]}
         ],
         temperature=0.4
     )
