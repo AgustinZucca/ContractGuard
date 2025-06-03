@@ -11,7 +11,7 @@ load_dotenv()
 
 # Load API keys
 openai.api_key = os.getenv("OPENAI_API_KEY")
-stripe.api_key = st.secrets["stripe"]["api_key"]
+stripe.api_key = st.secrets["api_key"]
 
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
