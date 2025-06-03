@@ -74,17 +74,35 @@ def analyze_contract(text):
     )
     return response.choices[0].message.content
 
-# Check Supabase for prior payment
+# Supabase helpers
 def file_already_paid(file_hash):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
     url = f"{supabase_url}/rest/v1/paid_files?file_hash=eq.{file_hash}"
     r = requests.get(url, headers=headers)
     return r.status_code == 200 and len(r.json()) > 0
 
+def save_uploaded_contract(file_hash, contract_text):
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+    data = {"file_hash": file_hash, "text": contract_text}
+    url = f"{supabase_url}/rest/v1/uploaded_contracts"
+    requests.post(url, json=data, headers=headers)
+
+def get_contract_text_by_hash(file_hash):
+    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+    url = f"{supabase_url}/rest/v1/uploaded_contracts?file_hash=eq.{file_hash}"
+    r = requests.get(url, headers=headers)
+    if r.status_code == 200 and len(r.json()) > 0:
+        return r.json()[0].get("text", "")
+    return ""
+
 # Streamlit UI
 st.set_page_config(page_title="ClauseGuard - Contract Analyzer", layout="centered")
 
-# --- Hero Section / Landing Page ---
 st.markdown("""
 # 📄 **ClauseGuard**
 ### _Don't sign blind._
@@ -103,6 +121,18 @@ Upload your contract and get a clear, AI-powered summary with key clauses, red f
 # Email input
 st.session_state.user_email = st.text_input("Enter your email to receive the summary:", value=st.session_state.user_email)
 
+# Handle payment redirect with file hash in query
+if st.query_params.get("success") and not st.session_state.contract_text:
+    file_hash = st.query_params.get("hash")
+    if file_hash:
+        text = get_contract_text_by_hash(file_hash)
+        if text:
+            st.session_state.contract_text = text
+            st.session_state.file_hash = file_hash
+            st.success("✅ Payment confirmed! Analyzing your contract...")
+            with st.spinner("Analyzing..."):
+                st.session_state.analysis_output = analyze_contract(text)
+
 # Upload section
 uploaded_file = st.file_uploader("Upload a contract (PDF or Word)", type=["pdf", "docx"])
 
@@ -112,15 +142,16 @@ if uploaded_file:
     st.session_state.uploaded_filename = uploaded_file.name
     st.session_state.file_hash = file_hash
     st.session_state.analysis_output = ""
+    save_uploaded_contract(file_hash, contract_text)
 
 # Show preview if contract is available
 if st.session_state.contract_text:
     st.markdown("---")
-    st.info(f"✅ Uploaded: {st.session_state.uploaded_filename}")
+    if st.session_state.uploaded_filename:
+        st.info(f"✅ Uploaded: {st.session_state.uploaded_filename}")
     st.write("### Contract Preview")
     st.code(st.session_state.contract_text[:1000])
 
-    # Check for prior payment in Supabase
     already_paid = file_already_paid(st.session_state.file_hash)
 
     if not already_paid and not st.query_params.get("success") and not st.session_state.analysis_output:
@@ -145,20 +176,12 @@ if st.session_state.contract_text:
             )
             st.markdown(f"[Click here to complete payment]({session.url})")
 
-# Unlock analysis if payment confirmed
-if st.query_params.get("success") and st.session_state.contract_text:
-    if not st.session_state.analysis_output:
-        st.success("✅ Payment confirmed! Analyzing your contract...")
-        with st.spinner("Analyzing..."):
-            st.session_state.analysis_output = analyze_contract(st.session_state.contract_text)
-
 # Show analysis
 if st.session_state.analysis_output:
     st.markdown("---")
     st.subheader("🔍 Contract Summary & Suggestions")
     st.markdown(st.session_state.analysis_output)
 
-    # Download PDF
     if st.download_button("📄 Download as PDF", data=st.session_state.analysis_output.encode("utf-8"), file_name="contract_summary.txt"):
         st.success("Download started")
 
