@@ -122,7 +122,7 @@ Upload your contract and get a clear, AI-powered summary with key clauses, red f
 st.session_state.user_email = st.text_input("Enter your email to receive the summary:", value=st.session_state.user_email)
 
 # Handle payment redirect with file hash in query
-if st.query_params.get("success") and not st.session_state.contract_text:
+if st.query_params.get("success") and st.query_params.get("hash"):
     file_hash = st.query_params.get("hash")
     if file_hash:
         text = get_contract_text_by_hash(file_hash)
