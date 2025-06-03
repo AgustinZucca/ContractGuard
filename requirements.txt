@@ -5,3 +5,5 @@ pdfplumber
 python-docx
 stripe
 pandas
+flask
+requests
