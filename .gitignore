@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Virtual environments
+venv/
+env/
