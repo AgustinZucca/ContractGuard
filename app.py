@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Load API keys
-openai.api_key = os.getenv("OPENAI_API_KEY")
 stripe.api_key = st.secrets["api_key"]
 
 # Set product price and ID
@@ -44,9 +43,9 @@ You are a legal assistant. Summarize the following contract:
 Contract:
 """
 
-# GPT Analysis
+# GPT Analysis using new OpenAI SDK
 from openai import OpenAI
-client = OpenAI()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def analyze_contract(text):
     response = client.chat.completions.create(
