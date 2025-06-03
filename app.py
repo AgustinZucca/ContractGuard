@@ -97,8 +97,8 @@ if uploaded_file:
                     'quantity': 1,
                 }],
                 mode='payment',
-                success_url="https://clauseguard.streamlit.app?success=true",
-                cancel_url="https://clauseguard.streamlit.app?canceled=true",
+                success_url="https://contractguard.streamlit.app?success=true",
+                cancel_url="https://contractguard.streamlit.app?canceled=true",
             )
             st.markdown(f"[Click here to complete payment]({session.url})")
 
