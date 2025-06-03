@@ -4,14 +4,20 @@ import pdfplumber
 import docx
 import os
 import stripe
+import hashlib
+import requests
 from io import BytesIO
 from dotenv import load_dotenv
+from datetime import datetime
+from fpdf import FPDF
 
 load_dotenv()
 
 # Load API keys
 stripe.api_key = st.secrets["api_key"]
 openai_api_key = st.secrets["openai_api_key"]
+supabase_url = st.secrets["supabase_url"]
+supabase_key = st.secrets["supabase_key"]
 
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
@@ -19,30 +25,37 @@ PRODUCT_NAME = "Contract Analysis"
 REAL_URL = "https://contractguard.streamlit.app"
 
 # Session state to persist contract text and upload across reruns
-if "contract_text" not in st.session_state:
-    st.session_state.contract_text = ""
-if "uploaded_filename" not in st.session_state:
-    st.session_state.uploaded_filename = ""
+st.session_state.setdefault("contract_text", "")
+st.session_state.setdefault("uploaded_filename", "")
+st.session_state.setdefault("analysis_output", "")
+st.session_state.setdefault("file_hash", "")
+st.session_state.setdefault("user_email", "")
 
-# Helper to extract text from uploaded file
-def extract_text(file):
+# Helper to extract text and hash file
+def extract_text_and_hash(file):
+    file_bytes = file.read()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    file.seek(0)
     if file.type == "application/pdf":
-        with pdfplumber.open(file) as pdf:
-            return "\n".join(page.extract_text() or "" for page in pdf.pages)
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
     elif file.type in ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-        doc = docx.Document(file)
-        return "\n".join([para.text for para in doc.paragraphs])
+        doc = docx.Document(BytesIO(file_bytes))
+        text = "\n".join([para.text for para in doc.paragraphs])
     else:
-        return "Unsupported file type."
+        text = "Unsupported file type."
+    return text, file_hash
 
 # GPT Prompt
 PROMPT_TEMPLATE = """
-You are a legal assistant. Summarize the following contract:
+You are a senior legal advisor specializing in contract review. Provide a professional, concise summary of the following contract:
 
-1. Key Clauses (e.g., Payment Terms, Termination, Scope of Work)
-2. Potential Risks or Ambiguous Language (explain clearly)
-3. Overall Risk Level (Low/Medium/High) and why
-4. Suggestions for improvement: what a freelancer or small business should negotiate or request to change for better protection.
+1. Summary of key clauses: Payment Terms, Termination, Scope of Work, and any others found.
+2. Identify unclear or risky language with specific quotes and short explanations.
+3. Assign a Risk Level (Low / Medium / High) with reasoning.
+4. Provide direct suggestions for improvements or negotiation points a freelancer or small business should consider.
+
+Respond in markdown format with clear headers and bullet points.
 
 Contract:
 """
@@ -57,9 +70,16 @@ def analyze_contract(text):
         messages=[
             {"role": "user", "content": PROMPT_TEMPLATE + text[:8000]}
         ],
-        temperature=0.4
+        temperature=0.3
     )
     return response.choices[0].message.content
+
+# Check Supabase for prior payment
+def file_already_paid(file_hash):
+    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+    url = f"{supabase_url}/rest/v1/paid_files?file_hash=eq.{file_hash}"
+    r = requests.get(url, headers=headers)
+    return r.status_code == 200 and len(r.json()) > 0
 
 # Streamlit UI
 st.set_page_config(page_title="ClauseGuard - Contract Analyzer", layout="centered")
@@ -69,62 +89,78 @@ st.markdown("""
 # 📄 **ClauseGuard**
 ### _Don't sign blind._
 
-Upload any contract and get a clear, AI-powered summary with key clauses, potential red flags, and suggestions — in seconds.
+Upload your contract and get a clear, AI-powered summary with key clauses, red flags, and what to change — in seconds.
 
-✅ Understand payment terms, scope, and liability  
-🚩 Spot risky language or unclear terms  
-🛠️ Get suggestions on what to negotiate  
-🔐 One-time payment of **$5** — no subscription
+✅ Understand payment terms and scope  
+🚩 Spot risky or vague language  
+🛠️ Know what to renegotiate  
+📱 Optimized for mobile  
+🔐 One-time payment of **$5**
 
 ---
 """)
+
+# Email input
+st.session_state.user_email = st.text_input("Enter your email to receive the summary:", value=st.session_state.user_email)
 
 # Upload section
 uploaded_file = st.file_uploader("Upload a contract (PDF or Word)", type=["pdf", "docx"])
 
 if uploaded_file:
-    st.session_state.contract_text = extract_text(uploaded_file)
+    contract_text, file_hash = extract_text_and_hash(uploaded_file)
+    st.session_state.contract_text = contract_text
     st.session_state.uploaded_filename = uploaded_file.name
+    st.session_state.file_hash = file_hash
+    st.session_state.analysis_output = ""
 
-# Show preview if contract was uploaded or remembered from session
+# Show preview if contract is available
 if st.session_state.contract_text:
     st.markdown("---")
-    st.write(f"✅ File uploaded: {st.session_state.uploaded_filename}")
-    st.write("Here's a preview of your contract (first 1000 characters):")
+    st.info(f"✅ Uploaded: {st.session_state.uploaded_filename}")
+    st.write("### Contract Preview")
     st.code(st.session_state.contract_text[:1000])
 
-    # Ask user to pay before full analysis
-    st.markdown("### 🔐 Unlock Full Analysis for $5")
-    if st.button("Pay with Stripe"):
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[{
-                'price_data': {
-                    'currency': 'usd',
-                    'product_data': {
-                        'name': PRODUCT_NAME,
+    # Check for prior payment in Supabase
+    already_paid = file_already_paid(st.session_state.file_hash)
+
+    if not already_paid and not st.query_params.get("success") and not st.session_state.analysis_output:
+        st.markdown("### 🔐 Unlock Full Analysis for $5")
+        if st.button("Pay with Stripe"):
+            session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': PRODUCT_NAME,
+                        },
+                        'unit_amount': PRODUCT_PRICE,
                     },
-                    'unit_amount': PRODUCT_PRICE,
-                },
-                'quantity': 1,
-            }],
-            mode='payment',
-            success_url=f"{REAL_URL}?success=true",
-            cancel_url=f"{REAL_URL}?canceled=true",
-        )
-        st.markdown(f"[Click here to complete payment]({session.url})")
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
+                cancel_url=f"{REAL_URL}?canceled=true",
+                metadata={"file_hash": st.session_state.file_hash, "email": st.session_state.user_email}
+            )
+            st.markdown(f"[Click here to complete payment]({session.url})")
 
 # Unlock analysis if payment confirmed
-if st.query_params.get("success"):
-    if st.session_state.contract_text:
-        st.success("Payment confirmed! Analyzing your contract...")
+if st.query_params.get("success") and st.session_state.contract_text:
+    if not st.session_state.analysis_output:
+        st.success("✅ Payment confirmed! Analyzing your contract...")
         with st.spinner("Analyzing..."):
-            output = analyze_contract(st.session_state.contract_text)
-        st.markdown("---")
-        st.subheader("🔍 Contract Summary with Recommendations")
-        st.markdown(output)
-    else:
-        st.warning("We couldn't find your uploaded contract. Please upload again.")
+            st.session_state.analysis_output = analyze_contract(st.session_state.contract_text)
+
+# Show analysis
+if st.session_state.analysis_output:
+    st.markdown("---")
+    st.subheader("🔍 Contract Summary & Suggestions")
+    st.markdown(st.session_state.analysis_output)
+
+    # Download PDF
+    if st.download_button("📄 Download as PDF", data=st.session_state.analysis_output.encode("utf-8"), file_name="contract_summary.txt"):
+        st.success("Download started")
 
 elif st.query_params.get("canceled"):
-    st.warning("Payment was canceled. Try again when ready.")
+    st.warning("⚠️ Payment was canceled. Try again when ready.")
