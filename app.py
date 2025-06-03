@@ -51,9 +51,22 @@ def analyze_contract(text):
     return response.choices[0].message.content
 
 # Streamlit UI
-st.set_page_config(page_title="ClauseGuard - Contract Analyzer")
-st.title("📄 ClauseGuard")
-st.subheader("Upload your contract. Get an instant, AI-powered summary.")
+st.set_page_config(page_title="ClauseGuard - Contract Analyzer", layout="centered")
+
+# --- Hero Section / Landing Page ---
+st.markdown("""
+# 📄 **ClauseGuard**
+### _Don't sign blind._
+
+Upload any contract and get a clear, AI-powered summary with key clauses and potential red flags — in seconds.
+
+✅ Understand payment terms, scope, and liability  
+🚩 Spot risky language or unclear terms  
+🔐 One-time payment of **$5** — no subscription
+
+---
+""")
+
 
 # Upload section
 uploaded_file = st.file_uploader("Upload a contract (PDF or Word)", type=["pdf", "docx"])
