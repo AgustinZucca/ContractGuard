@@ -11,6 +11,7 @@ load_dotenv()
 
 # Load API keys
 stripe.api_key = st.secrets["api_key"]
+openai_api_key = st.secrets["openai_api_key"]
 
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
@@ -45,7 +46,7 @@ Contract:
 
 # GPT Analysis using new OpenAI SDK
 from openai import OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=openai_api_key)
 
 def analyze_contract(text):
     response = client.chat.completions.create(
