@@ -171,32 +171,46 @@ if st.session_state.contract_text:
     if not already_paid and not st.session_state.analysis_output:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
 
-        if st.button("Generate Stripe Checkout"):
-            session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=[{
-                    'price_data': {
-                        'currency': 'usd',
-                        'product_data': {
-                            'name': PRODUCT_NAME,
+        if "checkout_url" not in st.session_state:
+            if st.button("Generate Payment Link"):
+                session = stripe.checkout.Session.create(
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price_data': {
+                            'currency': 'usd',
+                            'product_data': {
+                                'name': PRODUCT_NAME,
+                            },
+                            'unit_amount': PRODUCT_PRICE,
                         },
-                        'unit_amount': PRODUCT_PRICE,
-                    },
-                    'quantity': 1,
-                }],
-                mode='payment',
-                success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
-                cancel_url=f"{REAL_URL}?canceled=true"
-            )
-
-            st.session_state.checkout_url = session.url
+                        'quantity': 1,
+                    }],
+                    mode='payment',
+                    success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
+                    cancel_url=f"{REAL_URL}?canceled=true"
+                )
+                st.session_state.checkout_url = session.url
 
         if "checkout_url" in st.session_state:
+            st.markdown("---")
             st.markdown(
-                f'<a href="{st.session_state.checkout_url}" target="_blank"><button style="font-size:16px;padding:10px 20px;">💳 Click here to complete payment</button></a>',
+                f"""
+                <a href="{st.session_state.checkout_url}" target="_blank">
+                    <button style="
+                        background-color:#635bff;
+                        color:white;
+                        padding:10px 20px;
+                        font-size:16px;
+                        border:none;
+                        border-radius:5px;
+                        cursor:pointer;
+                    ">
+                        💳 Pay $5 Securely with Stripe
+                    </button>
+                </a>
+                """,
                 unsafe_allow_html=True
             )
-
 
 
 
