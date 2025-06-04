@@ -192,8 +192,6 @@ if st.session_state.contract_text:
             st.session_state.checkout_url = session.url
 
         if "checkout_url" in st.session_state:
-            st.info("Your secure Stripe checkout is ready. Click the button below to proceed.")
-
             st.markdown(
                 f'<a href="{st.session_state.checkout_url}" target="_blank"><button style="font-size:16px;padding:10px 20px;">💳 Click here to complete payment</button></a>',
                 unsafe_allow_html=True
