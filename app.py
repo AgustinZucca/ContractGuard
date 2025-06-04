@@ -184,9 +184,9 @@ if st.session_state.analysis_output:
     pdf.set_font("Arial", size=12)
     for line in st.session_state.analysis_output.split("\n"):
         pdf.multi_cell(0, 10, line)
-    pdf_buffer = BytesIO()
-    pdf.output(pdf_buffer)
-    pdf_buffer.seek(0)
+
+    pdf_output = pdf.output(dest='S').encode('latin1')
+    pdf_buffer = BytesIO(pdf_output)
 
     if st.download_button("📄 Download as PDF", data=pdf_buffer, file_name="contract_summary.pdf", mime="application/pdf"):
         st.success("Download started")
