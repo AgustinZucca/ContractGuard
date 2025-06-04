@@ -207,7 +207,6 @@ if st.session_state.contract_text:
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
             st.session_state.checkout_url = session.url
-            st.experimental_rerun()
 
         if st.session_state.checkout_url:
             st.markdown("---")
