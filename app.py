@@ -170,30 +170,24 @@ if st.session_state.contract_text:
 
     if not already_paid and not st.session_state.analysis_output:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
-        if st.button("Pay with Stripe"):
-            session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=[{
-                    'price_data': {
-                        'currency': 'usd',
-                        'product_data': {
-                            'name': PRODUCT_NAME,
-                        },
-                        'unit_amount': PRODUCT_PRICE,
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': PRODUCT_NAME,
                     },
-                    'quantity': 1,
-                }],
-                mode='payment',
-                success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
-                cancel_url=f"{REAL_URL}?canceled=true"
-            )
-            
-            st.markdown("---")
-            st.success("✅ Secure checkout link ready")
-            st.markdown(
-                f'<a href="{session.url}" target="_blank"><button style="padding:0.5em 1em;font-size:16px;">Click here to complete payment</button></a>',
-                unsafe_allow_html=True
-            )
+                    'unit_amount': PRODUCT_PRICE,
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
+            cancel_url=f"{REAL_URL}?canceled=true"
+        )
+        st.link_button("💳 Pay with Stripe", url=session.url)
+
 
 
 # Show analysis
