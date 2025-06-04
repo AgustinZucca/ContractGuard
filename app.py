@@ -154,7 +154,7 @@ if st.session_state.contract_text:
 
     already_paid = file_already_paid(st.session_state.file_hash)
 
-    if not already_paid and not st.query_params.get("success") and not st.session_state.analysis_output:
+    if not already_paid and not st.session_state.analysis_output:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Pay with Stripe"):
             session = stripe.checkout.Session.create(
