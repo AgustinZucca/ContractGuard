@@ -19,6 +19,21 @@ openai_api_key = st.secrets["openai_api_key"]
 supabase_url = st.secrets["supabase_url"]
 supabase_key = st.secrets["supabase_key"]
 
+st.markdown("""
+    <style>
+    a {
+        text-decoration: none !important;
+        color: inherit !important;
+        pointer-events: none !important;
+        cursor: default !important;
+    }
+    a:hover {
+        text-decoration: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
 PRODUCT_NAME = "Contract Analysis"
@@ -171,7 +186,8 @@ if st.session_state.contract_text:
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            st.markdown(f"[Click here to complete payment]({session.url})")
+            st.experimental_rerun()
+            st.markdown(f'<meta http-equiv="refresh" content="0;url={session.url}" />', unsafe_allow_html=True)
 
 # Show analysis
 if st.session_state.analysis_output:
