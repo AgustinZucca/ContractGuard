@@ -171,7 +171,12 @@ if st.session_state.contract_text:
     if not already_paid and not st.session_state.analysis_output:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
 
-        if st.button("Pay with Stripe"):
+        # Reset checkout URL if needed
+        if "checkout_url" not in st.session_state:
+            st.session_state.checkout_url = None
+
+        # Step 1: Show the button
+        if st.button("Generate Stripe Link"):
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
                 line_items=[{
@@ -190,9 +195,15 @@ if st.session_state.contract_text:
             )
             st.session_state.checkout_url = session.url
 
-        if "checkout_url" in st.session_state:
+        # Step 2: Show a clean clickable link
+        if st.session_state.checkout_url:
             st.markdown("---")
-            st.markdown(f"[🔗 Click here to complete payment]({st.session_state.checkout_url})")
+            st.success("✅ Stripe checkout link generated")
+            st.markdown(
+                f"[👉 Click here to securely pay with Stripe]({st.session_state.checkout_url})",
+                unsafe_allow_html=True
+            )
+
 
 
 
