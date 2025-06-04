@@ -22,20 +22,6 @@ openai_api_key = st.secrets["openai_api_key"]
 supabase_url = st.secrets["supabase_url"]
 supabase_key = st.secrets["supabase_key"]
 
-st.markdown("""
-    <style>
-    a {
-        text-decoration: none !important;
-        color: inherit !important;
-        pointer-events: none !important;
-        cursor: default !important;
-    }
-    a:hover {
-        text-decoration: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
@@ -203,9 +189,6 @@ if st.session_state.contract_text:
                 f"[👉 Click here to securely pay with Stripe]({st.session_state.checkout_url})",
                 unsafe_allow_html=True
             )
-
-
-
 
 
 # Show analysis
