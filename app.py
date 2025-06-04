@@ -22,6 +22,20 @@ openai_api_key = st.secrets["openai_api_key"]
 supabase_url = st.secrets["supabase_url"]
 supabase_key = st.secrets["supabase_key"]
 
+st.markdown("""
+# 📄 **ContractGuard**
+### _Don't sign blind._
+
+Upload your contract and get a clear, AI-powered summary with key clauses, red flags, and what to change — in seconds.
+
+✅ Understand payment terms and scope  
+🚩 Spot risky or vague language  
+🛠️ Know what to renegotiate  
+📱 Optimized for mobile  
+🔐 One-time payment of **$5**
+
+---
+""")
 
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
@@ -33,7 +47,7 @@ st.session_state.setdefault("contract_text", "")
 st.session_state.setdefault("uploaded_filename", "")
 st.session_state.setdefault("analysis_output", "")
 st.session_state.setdefault("file_hash", "")
-st.session_state.setdefault("summary_exists", False)
+st.session_state.setdefault("checkout_url", None)
 
 # Helper to extract text and hash file
 def extract_text_and_hash(file):
@@ -79,6 +93,14 @@ def analyze_contract(text):
     return response.choices[0].message.content
 
 # Supabase helpers
+def get_summary_by_hash(file_hash):
+    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+    url = f"{supabase_url}/rest/v1/summaries?file_hash=eq.{file_hash}"
+    r = requests.get(url, headers=headers)
+    if r.status_code == 200 and len(r.json()) > 0:
+        return r.json()[0].get("summary", "")
+    return ""
+
 def file_already_paid(file_hash):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
     url = f"{supabase_url}/rest/v1/paid_files?file_hash=eq.{file_hash}"
@@ -96,6 +118,17 @@ def save_uploaded_contract(file_hash, contract_text):
     url = f"{supabase_url}/rest/v1/uploaded_contracts"
     requests.post(url, json=data, headers=headers)
 
+def save_summary(file_hash, summary_text):
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+    data = {"file_hash": file_hash, "summary": summary_text}
+    url = f"{supabase_url}/rest/v1/summaries"
+    requests.post(url, json=data, headers=headers)
+
 def get_contract_text_by_hash(file_hash):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
     url = f"{supabase_url}/rest/v1/uploaded_contracts?file_hash=eq.{file_hash}"
@@ -104,70 +137,27 @@ def get_contract_text_by_hash(file_hash):
         return r.json()[0].get("text", "")
     return ""
 
-
-def save_summary(file_hash, summary_text):
-    # Inserts or upserts into `summaries` table
-    headers = {
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"  # Upsert mode
-    }
-    data = {"file_hash": file_hash, "summary": summary_text}
-    url = f"{supabase_url}/rest/v1/summaries"
-    requests.post(url, json=data, headers=headers)
-
-def get_summary_by_hash(file_hash):
-    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    url = f"{supabase_url}/rest/v1/summaries?file_hash=eq.{file_hash}"
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200 and len(r.json()) > 0:
-        return r.json()[0].get("summary", "")
-    return ""
-
-
-st.markdown("""
-# 📄 **ContractGuard**
-### _Don't sign blind._
-
-Upload your contract and get a clear, AI-powered summary with key clauses, red flags, and what to change — in seconds.
-
-✅ Understand payment terms and scope  
-🚩 Spot risky or vague language  
-🛠️ Know what to renegotiate  
-📱 Optimized for mobile  
-🔐 One-time payment of **$5**
-
----
-""")
-
 # Handle payment redirect with file hash in query
 if st.query_params.get("success") and st.query_params.get("hash"):
     file_hash = st.query_params.get("hash")
-    if file_hash:
-        text = get_contract_text_by_hash(file_hash)
-        if text:
-            st.session_state.contract_text = text
-            st.session_state.file_hash = file_hash
-            st.session_state.uploaded_filename = "Recovered after payment"
+    text = get_contract_text_by_hash(file_hash)
+    if text:
+        st.session_state.contract_text = text
+        st.session_state.file_hash = file_hash
+        st.session_state.uploaded_filename = "Recovered after payment"
+        # Fetch existing summary if any
+        existing = get_summary_by_hash(file_hash)
+        if existing:
+            st.session_state.analysis_output = existing
+        else:
             st.success("✅ Payment confirmed! Analyzing your contract...")
             with st.spinner("Analyzing..."):
-                # Generate or fetch summary
-                # If a summary was already saved for this hash, use it
-                existing = get_summary_by_hash(file_hash)
-                if existing:
-                    st.session_state.analysis_output = existing
-                    st.session_state.summary_exists = True
-                else:
-                    output = analyze_contract(text)
-                    st.session_state.analysis_output = output
-                    save_summary(file_hash, output)
- 
-
+                output = analyze_contract(text)
+                st.session_state.analysis_output = output
+                save_summary(file_hash, output)
 
 # Upload section
 uploaded_file = st.file_uploader("Upload a contract (PDF or Word)", type=["pdf", "docx"])
-
 if uploaded_file:
     contract_text, file_hash = extract_text_and_hash(uploaded_file)
     st.session_state.contract_text = contract_text
@@ -175,12 +165,11 @@ if uploaded_file:
     st.session_state.file_hash = file_hash
     st.session_state.analysis_output = ""
     save_uploaded_contract(file_hash, contract_text)
-    # If the file was already paid for, try to fetch its summary
-    if file_already_paid(file_hash):
-        existing = get_summary_by_hash(file_hash)
-        if existing:
-            st.session_state.analysis_output = existing
-            st.session_state.summary_exists = True
+
+    # Check if summary exists and load it
+    existing = get_summary_by_hash(file_hash)
+    if existing:
+        st.session_state.analysis_output = existing
 
 # Show preview if contract is available
 if st.session_state.contract_text:
@@ -192,21 +181,14 @@ if st.session_state.contract_text:
 
     already_paid = file_already_paid(st.session_state.file_hash)
 
-         # If they've already paid and a summary exists → show it immediately
-    if already_paid and st.session_state.analysis_output:
+    # If summary already exists, show it immediately
+    if st.session_state.analysis_output:
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
         st.markdown(st.session_state.analysis_output)
-     # Otherwise, proceed with pay+generate flow
-
-    elif not already_paid and not st.session_state.analysis_output:
+    # Otherwise, proceed with pay+generate flow
+    elif not already_paid:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
-
-        # 1. Initialize checkout_url once
-        if "checkout_url" not in st.session_state:
-            st.session_state.checkout_url = None
-
-        # 2. Button to generate the Stripe link (does NOT redirect)
         if st.button("Generate Stripe Link"):
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
@@ -225,8 +207,8 @@ if st.session_state.contract_text:
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
             st.session_state.checkout_url = session.url
+            st.experimental_rerun()
 
-        # 3. Show the clickable link—only clicking this opens Stripe in a new tab
         if st.session_state.checkout_url:
             st.markdown("---")
             st.success("✅ Stripe checkout link generated")
@@ -235,8 +217,7 @@ if st.session_state.contract_text:
                 unsafe_allow_html=True
             )
 
-
-# Show analysis
+# Show analysis if we have it (either just generated or fetched)
 if st.session_state.analysis_output:
     st.markdown("---")
     st.subheader("🔍 Contract Summary & Suggestions")
@@ -253,7 +234,6 @@ if st.session_state.analysis_output:
 
     if st.download_button("📄 Download as PDF", data=pdf_buffer, file_name="contract_summary.pdf", mime="application/pdf"):
         st.success("Download started")
-
 
 elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment was canceled. Try again when ready.")
