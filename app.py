@@ -145,6 +145,7 @@ if uploaded_file:
     save_uploaded_contract(file_hash, contract_text)
 
 # Show preview if contract is available
+# Show preview if contract is available
 if st.session_state.contract_text:
     st.markdown("---")
     if st.session_state.uploaded_filename:
@@ -157,11 +158,11 @@ if st.session_state.contract_text:
     if not already_paid and not st.session_state.analysis_output:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
 
-        # Reset checkout URL if needed
+        # 1. Initialize checkout_url in session state
         if "checkout_url" not in st.session_state:
             st.session_state.checkout_url = None
 
-        # Step 1: Show the button
+        # 2. Button to generate the Stripe link
         if st.button("Generate Stripe Link"):
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
@@ -180,11 +181,12 @@ if st.session_state.contract_text:
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
             st.session_state.checkout_url = session.url
+            st.experimental_rerun()  # Force a rerun so the link appears in the next frame
 
-        # Step 2: Show a clean clickable link
+        # 3. After rerun, show the link if available
         if st.session_state.checkout_url:
             st.markdown("---")
-            st.success("✅ Stripe checkout link generated")
+            st.success("✅ Stripe link is ready")
             st.markdown(
                 f"[👉 Click here to securely pay with Stripe]({st.session_state.checkout_url})",
                 unsafe_allow_html=True
