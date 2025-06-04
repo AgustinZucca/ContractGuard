@@ -129,9 +129,11 @@ if st.query_params.get("success") and st.query_params.get("hash"):
         if text:
             st.session_state.contract_text = text
             st.session_state.file_hash = file_hash
+            st.session_state.uploaded_filename = "Recovered after payment"
             st.success("✅ Payment confirmed! Analyzing your contract...")
             with st.spinner("Analyzing..."):
                 st.session_state.analysis_output = analyze_contract(text)
+
 
 # Upload section
 uploaded_file = st.file_uploader("Upload a contract (PDF or Word)", type=["pdf", "docx"])
