@@ -29,7 +29,6 @@ st.session_state.setdefault("contract_text", "")
 st.session_state.setdefault("uploaded_filename", "")
 st.session_state.setdefault("analysis_output", "")
 st.session_state.setdefault("file_hash", "")
-st.session_state.setdefault("user_email", "")
 
 # Helper to extract text and hash file
 def extract_text_and_hash(file):
@@ -118,9 +117,6 @@ Upload your contract and get a clear, AI-powered summary with key clauses, red f
 ---
 """)
 
-# Email input
-st.session_state.user_email = st.text_input("Enter your email to receive the summary:", value=st.session_state.user_email)
-
 # Handle payment redirect with file hash in query
 if st.query_params.get("success") and st.query_params.get("hash"):
     file_hash = st.query_params.get("hash")
@@ -173,8 +169,7 @@ if st.session_state.contract_text:
                 }],
                 mode='payment',
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
-                cancel_url=f"{REAL_URL}?canceled=true",
-                metadata={"file_hash": st.session_state.file_hash, "email": st.session_state.user_email}
+                cancel_url=f"{REAL_URL}?canceled=true"
             )
             st.markdown(f"[Click here to complete payment]({session.url})")
 
@@ -183,9 +178,19 @@ if st.session_state.analysis_output:
     st.markdown("---")
     st.subheader("🔍 Contract Summary & Suggestions")
     st.markdown(st.session_state.analysis_output)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+    for line in st.session_state.analysis_output.split("\n"):
+        pdf.multi_cell(0, 10, line)
+    pdf_buffer = BytesIO()
+    pdf.output(pdf_buffer)
+    pdf_buffer.seek(0)
 
-    if st.download_button("📄 Download as PDF", data=st.session_state.analysis_output.encode("utf-8"), file_name="contract_summary.txt"):
+    if st.download_button("📄 Download as PDF", data=pdf_buffer, file_name="contract_summary.pdf", mime="application/pdf"):
         st.success("Download started")
+
 
 elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment was canceled. Try again when ready.")
