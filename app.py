@@ -187,7 +187,6 @@ if st.session_state.contract_text:
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            st.experimental_rerun()
             st.markdown(f'<meta http-equiv="refresh" content="0;url={session.url}" />', unsafe_allow_html=True)
 
 # Show analysis
