@@ -13,6 +13,9 @@ from fpdf import FPDF
 
 load_dotenv()
 
+# Streamlit UI
+st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
+
 # Load API keys
 stripe.api_key = st.secrets["api_key"]
 openai_api_key = st.secrets["openai_api_key"]
@@ -114,8 +117,6 @@ def get_contract_text_by_hash(file_hash):
         return r.json()[0].get("text", "")
     return ""
 
-# Streamlit UI
-st.set_page_config(page_title="ClauseGuard - Contract Analyzer", layout="centered")
 
 st.markdown("""
 # 📄 **ClauseGuard**
