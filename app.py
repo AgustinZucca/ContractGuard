@@ -119,7 +119,7 @@ def get_contract_text_by_hash(file_hash):
 
 
 st.markdown("""
-# 📄 **ClauseGuard**
+# 📄 **ContractGuard**
 ### _Don't sign blind._
 
 Upload your contract and get a clear, AI-powered summary with key clauses, red flags, and what to change — in seconds.
