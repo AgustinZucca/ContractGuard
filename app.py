@@ -187,7 +187,16 @@ if st.session_state.contract_text:
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            st.markdown(f'<meta http-equiv="refresh" content="0;url={session.url}" />', unsafe_allow_html=True)
+
+            # Redirect to Stripe checkout page
+            st.markdown(
+                f"""
+                <script>
+                    window.location.href = "{session.url}";
+                </script>
+                """,
+                unsafe_allow_html=True
+            )
 
 # Show analysis
 if st.session_state.analysis_output:
