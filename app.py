@@ -13,7 +13,7 @@ from fpdf import FPDF
 
 # --- Setup ---
 load_dotenv()
-st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="wide")
+st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
 
 # --- API Keys (from ENV) ---
 stripe.api_key = os.getenv("api_key")
@@ -75,29 +75,28 @@ Contrato:
 }
 
 # --- Helper Functions ---
-def extract_text_and_hash(file):
-    data = file.read()
-    h = hashlib.sha256(data).hexdigest()
-    file.seek(0)
-    if file.type == "application/pdf":
+def extract_text_and_hash(uploaded_file):
+    data = uploaded_file.read()
+    file_hash = hashlib.sha256(data).hexdigest()
+    uploaded_file.seek(0)
+    if uploaded_file.type == "application/pdf":
         with pdfplumber.open(BytesIO(data)) as pdf:
             text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(BytesIO(data))
         text = "\n".join(para.text for para in doc.paragraphs)
     else:
         text = "Unsupported file type."
-    return text, h
+    return text, file_hash
 
 from openai import OpenAI
 client = OpenAI(api_key=openai_api_key)
 
 def analyze_contract(text):
-    # Split into chunks if too long
+    # Break into ~12k-character chunks if too long
     def split_chunks(t, max_chars=12000):
         paras = t.split("\n\n")
-        chunks = []
-        current = ""
+        chunks, current = [], ""
         for p in paras:
             if len(current) + len(p) + 2 <= max_chars:
                 current += p + "\n\n"
@@ -119,7 +118,6 @@ def analyze_contract(text):
         )
         return resp.choices[0].message.content
     else:
-        # Summarize each chunk and combine
         partials = []
         for c in chunks:
             full = prompt + c[:8000]
@@ -140,8 +138,8 @@ def analyze_contract(text):
 
 def supabase_get(table, query=""):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    r = requests.get(f"{supabase_url}/rest/v1/{table}{query}", headers=headers, timeout=10)
-    return r.json() if r.status_code in (200, 201) else []
+    response = requests.get(f"{supabase_url}/rest/v1/{table}{query}", headers=headers, timeout=10)
+    return response.json() if response.status_code in (200, 201) else []
 
 def supabase_insert(table, data, upsert=False):
     headers = {
@@ -189,17 +187,25 @@ if last_hash and not st.session_state.contract_text:
         if summary:
             st.session_state.analysis_output = summary
 
-# --- Header & Language Selection ---
-st.markdown(
-    """
-    <div style="display:flex; align-items:center; padding:10px 0;">
-        <img src="https://via.placeholder.com/40" style="margin-right:10px;" />
-        <h1 style="margin:0;">ContractGuard</h1>
-    </div>
-    """, unsafe_allow_html=True
-)
+# --- Header & ContractGuard Introduction ---
+st.markdown("""
+# 📄 **ContractGuard**
+### _Don't sign blind._
+
+Upload any contract and get a clear, AI-powered summary with key clauses and potential red flags—all in seconds.
+
+✅ Understand payment terms, scope, and liability  
+🚩 Spot risky language or unclear terms  
+🛠️ Get direct suggestions on what to renegotiate  
+📱 Fully responsive and mobile-friendly  
+🔐 One-time payment of **$5** — no subscription needed
+
+---
+""")
+
+# --- Language Selection ---
 st.session_state.language = st.selectbox(
-    "Language",
+    "Choose summary language:",
     options=[("English","en"), ("Español","es"), ("Português","pt")],
     format_func=lambda x: x[0],
     index=["en","es","pt"].index(st.session_state.language)
@@ -207,7 +213,7 @@ st.session_state.language = st.selectbox(
 
 st.markdown("---")
 
-# --- Handle Stripe Redirect ---
+# --- Handle Stripe Redirect via query_params ---
 if st.query_params.get("success") and st.query_params.get("hash"):
     fh = st.query_params.get("hash")[0]
     text = get_contract_text_by_hash(fh)
@@ -224,25 +230,25 @@ if st.query_params.get("success") and st.query_params.get("hash"):
                 out = analyze_contract(text)
                 st.session_state.analysis_output = out
                 save_summary(fh, out)
-        # Persist last viewed
+        # Persist last viewed in URL
         st.experimental_set_query_params(last_hash=fh)
 
 # --- Upload Section ---
-st.markdown("## Upload Contract")
+st.markdown("## Upload Your Contract")
 uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf","docx"])
 if uploaded_file:
-    text, h = extract_text_and_hash(uploaded_file)
-    st.session_state.contract_text = text
+    ctx, fh = extract_text_and_hash(uploaded_file)
+    st.session_state.contract_text = ctx
     st.session_state.uploaded_filename = uploaded_file.name
-    st.session_state.file_hash = h
-    save_uploaded_contract(h, text)
-    existing = get_summary_by_hash(h)
+    st.session_state.file_hash = fh
+    save_uploaded_contract(fh, ctx)
+    existing = get_summary_by_hash(fh)
     if existing:
         st.session_state.analysis_output = existing
     else:
         st.session_state.analysis_output = ""
     # Persist last viewed
-    st.experimental_set_query_params(last_hash=h)
+    st.experimental_set_query_params(last_hash=fh)
 
 # --- Show Preview & Flow ---
 if st.session_state.contract_text:
@@ -254,7 +260,7 @@ if st.session_state.contract_text:
 
     already = file_already_paid(st.session_state.file_hash)
 
-    # --- Show summary once if exists ---
+    # --- If summary exists, render once ---
     if st.session_state.analysis_output:
         st.markdown("---")
         st.subheader("🔍 Contract Summary & Suggestions")
@@ -267,7 +273,7 @@ if st.session_state.contract_text:
                 "<script>document.getElementById('clip').select();document.execCommand('copy');</script>",
                 unsafe_allow_html=True
             )
-            st.success("Copied!")
+            st.success("Copied to clipboard!")
 
         # Download as PDF
         pdf = FPDF()
@@ -280,7 +286,7 @@ if st.session_state.contract_text:
         if st.download_button("📄 Download as PDF", data=buffer, file_name="contract_summary.pdf", mime="application/pdf"):
             st.success("Download started")
 
-    # --- Otherwise, show Stripe flow if not paid ---
+    # --- Otherwise, show Stripe payment flow if not paid ---
     elif not already:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Generate Stripe Link"):
