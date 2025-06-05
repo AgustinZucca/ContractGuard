@@ -178,7 +178,7 @@ def save_summary(file_hash, summary):
     }, upsert=True)
 
 # --- “Last Viewed” Persistence via URL Param ---
-last_hash = st.experimental_get_query_params().get("last_hash", [])
+last_hash = st.query_params.get("last_hash", [])
 if last_hash and not st.session_state.contract_text:
     lh = last_hash[0]
     text = get_contract_text_by_hash(lh)
@@ -208,8 +208,8 @@ st.session_state.language = st.selectbox(
 st.markdown("---")
 
 # --- Handle Stripe Redirect ---
-if st.experimental_get_query_params().get("success") and st.experimental_get_query_params().get("hash"):
-    fh = st.experimental_get_query_params().get("hash")[0]
+if st.query_params.get("success") and st.query_params.get("hash"):
+    fh = st.query_params.get("hash")[0]
     text = get_contract_text_by_hash(fh)
     if text:
         st.session_state.contract_text = text
@@ -308,5 +308,5 @@ if st.session_state.contract_text:
                 unsafe_allow_html=True
             )
 
-elif st.experimental_get_query_params().get("canceled"):
+elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment was canceled. Try again.")
