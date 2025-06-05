@@ -41,7 +41,7 @@ Upload your contract and get a clear, AI-powered summary with key clauses, red f
 # Set product price and ID
 PRODUCT_PRICE = 500  # $5.00 in cents
 PRODUCT_NAME = "Contract Analysis"
-REAL_URL = "https://contractguard.streamlit.app"
+REAL_URL = "https://contractguard-5sm3.onrender.com/"
 
 # Session state to persist contract text and upload across reruns
 st.session_state.setdefault("contract_text", "")
