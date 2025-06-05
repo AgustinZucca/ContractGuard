@@ -107,7 +107,7 @@ def analyze_contract(text):
             chunks.append(current)
         return chunks
 
-    prompt = PROMPTS.get(st.session_state.language, PROMPTS["en"])
+    prompt = PROMPTS[st.session_state.language]
     chunks = split_chunks(text)
     if len(chunks) == 1:
         full = prompt + text[:8000]
@@ -175,17 +175,8 @@ def save_summary(file_hash, summary):
         "created_at": datetime.utcnow().isoformat()
     }, upsert=True)
 
-# --- “Last Viewed” Persistence via URL Param ---
-last_hash = st.query_params.get("last_hash", [])
-if last_hash and not st.session_state.contract_text:
-    lh = last_hash[0]
-    text = get_contract_text_by_hash(lh)
-    if text:
-        st.session_state.contract_text = text
-        st.session_state.file_hash = lh
-        summary = get_summary_by_hash(lh)
-        if summary:
-            st.session_state.analysis_output = summary
+# --- “Last Viewed” Persistence via Session State ---
+# (If user uploads the same file again in this session, summary is shown automatically)
 
 # --- ContractGuard Header & Details ---
 st.markdown("""
@@ -211,7 +202,6 @@ lang_display = st.selectbox(
         {"en": "English", "es": "Español", "pt": "Português"}[st.session_state.language]
     )
 )
-# Map display value to code
 lang_map = {"English": "en", "Español": "es", "Português": "pt"}
 st.session_state.language = lang_map[lang_display]
 
@@ -234,8 +224,8 @@ if st.query_params.get("success") and st.query_params.get("hash"):
                 out = analyze_contract(text)
                 st.session_state.analysis_output = out
                 save_summary(fh, out)
-        # Persist last viewed in URL
-        st.query_params = {"last_hash": [fh]}
+        # Remove success/hash from URL for a cleaner experience
+        st.experimental_set_query_params()  # clears all query params
 
 # --- Upload Section ---
 st.markdown("## Upload Your Contract")
@@ -251,8 +241,6 @@ if uploaded_file:
         st.session_state.analysis_output = existing
     else:
         st.session_state.analysis_output = ""
-    # Persist last viewed in URL
-    st.query_params = {"last_hash": [fh]}
 
 # --- Show Preview & Flow ---
 if st.session_state.contract_text:
@@ -264,7 +252,7 @@ if st.session_state.contract_text:
 
     already = file_already_paid(st.session_state.file_hash)
 
-    # --- If summary exists, render once ---
+    # --- If summary exists, render only once ---
     if st.session_state.analysis_output:
         st.markdown("---")
         st.subheader("🔍 Contract Summary & Suggestions")
@@ -272,7 +260,7 @@ if st.session_state.contract_text:
 
         # Copy to Clipboard
         if st.button("📋 Copy to Clipboard"):
-            st.write(
+            st.markdown(
                 f"<textarea id='clip' style='opacity:0;'>{st.session_state.analysis_output}</textarea>"
                 "<script>document.getElementById('clip').select();document.execCommand('copy');</script>",
                 unsafe_allow_html=True
