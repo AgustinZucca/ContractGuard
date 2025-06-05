@@ -226,19 +226,22 @@ if st.query_params.get("success") and st.query_params.get("hash"):
 # --- Upload Section: With Rerun Fix ---
 uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf", "docx"])
 
-if uploaded_file and not st.session_state.get("just_reran"):
+# Only process if new file hash
+if uploaded_file:
     ctx, fh = extract_text_and_hash(uploaded_file)
-    if not fh:
-        st.stop()
-    st.session_state.contract_text = ctx
-    st.session_state.uploaded_filename = uploaded_file.name
-    st.session_state.file_hash = fh
-    save_uploaded_contract(fh, ctx)
-    existing = get_summary_by_hash(fh)
-    st.session_state.analysis_output = existing if existing else ""
-    st.session_state.checkout_url = None
-    st.session_state.just_reran = True
-    st.experimental_rerun()
+    if fh and st.session_state.get("last_file_hash") != fh:
+        st.session_state.contract_text = ctx
+        st.session_state.uploaded_filename = uploaded_file.name
+        st.session_state.file_hash = fh
+        save_uploaded_contract(fh, ctx)
+        existing = get_summary_by_hash(fh)
+        st.session_state.analysis_output = existing if existing else ""
+        st.session_state.checkout_url = None
+        st.session_state.last_file_hash = fh
+        st.experimental_rerun()
+else:
+    st.session_state["last_file_hash"] = None  # Reset if no file uploaded
+
 
 if st.session_state.get("just_reran"):
     del st.session_state["just_reran"]
