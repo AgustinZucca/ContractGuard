@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import openai
 import pdfplumber
@@ -32,7 +33,6 @@ st.session_state.setdefault("analysis_output", "")
 st.session_state.setdefault("file_hash", "")
 st.session_state.setdefault("checkout_url", None)
 st.session_state.setdefault("language", "en")
-st.session_state.setdefault("last_hash", None)
 
 # --- Multilingual Prompts ---
 PROMPTS = {
@@ -75,17 +75,16 @@ Contrato:
 }
 
 # --- Helper Functions ---
-
 def extract_text_and_hash(file):
     data = file.read()
     h = hashlib.sha256(data).hexdigest()
     file.seek(0)
     if file.type == "application/pdf":
         with pdfplumber.open(BytesIO(data)) as pdf:
-            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(BytesIO(data))
-        text = "\n".join(p.text for p in doc.paragraphs)
+        text = "\n".join(para.text for para in doc.paragraphs)
     else:
         text = "Unsupported file type."
     return text, h
@@ -94,11 +93,11 @@ from openai import OpenAI
 client = OpenAI(api_key=openai_api_key)
 
 def analyze_contract(text):
-    prompt = PROMPTS.get(st.session_state.language, PROMPTS["en"])
-    # If very long, chunk
+    # Split into chunks if too long
     def split_chunks(t, max_chars=12000):
         paras = t.split("\n\n")
-        chunks, current = [], ""
+        chunks = []
+        current = ""
         for p in paras:
             if len(current) + len(p) + 2 <= max_chars:
                 current += p + "\n\n"
@@ -109,6 +108,7 @@ def analyze_contract(text):
             chunks.append(current)
         return chunks
 
+    prompt = PROMPTS.get(st.session_state.language, PROMPTS["en"])
     chunks = split_chunks(text)
     if len(chunks) == 1:
         full = prompt + text[:8000]
@@ -119,6 +119,7 @@ def analyze_contract(text):
         )
         return resp.choices[0].message.content
     else:
+        # Summarize each chunk and combine
         partials = []
         for c in chunks:
             full = prompt + c[:8000]
@@ -129,12 +130,13 @@ def analyze_contract(text):
             )
             partials.append(resp.choices[0].message.content)
         combined = "\n\n".join(partials)
-        resp_final = client.chat.completions.create(
+        final_prompt = prompt + combined[:8000]
+        final_resp = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": prompt + combined[:8000]}],
+            messages=[{"role": "user", "content": final_prompt}],
             temperature=0.3
         )
-        return resp_final.choices[0].message.content
+        return final_resp.choices[0].message.content
 
 def supabase_get(table, query=""):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
@@ -258,7 +260,7 @@ if st.session_state.contract_text:
         st.subheader("🔍 Contract Summary & Suggestions")
         st.markdown(st.session_state.analysis_output)
 
-        # Copy to clipboard
+        # Copy to Clipboard
         if st.button("📋 Copy to Clipboard"):
             st.write(
                 f"<textarea id='clip' style='opacity:0;'>{st.session_state.analysis_output}</textarea>"
@@ -308,5 +310,3 @@ if st.session_state.contract_text:
 
 elif st.experimental_get_query_params().get("canceled"):
     st.warning("⚠️ Payment was canceled. Try again.")
-
-# --- End of App ---
