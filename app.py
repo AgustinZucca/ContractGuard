@@ -282,7 +282,6 @@ if st.session_state.contract_text:
                 output = analyze_contract(st.session_state.contract_text)
                 st.session_state.analysis_output = output
                 save_summary(st.session_state.file_hash, output)
-            st.experimental_rerun()
         else:
             # Not paid yet
             st.markdown("### 🔐 Unlock Full Analysis for $5")
