@@ -33,6 +33,7 @@ st.session_state.setdefault("analysis_output", "")
 st.session_state.setdefault("file_hash", "")
 st.session_state.setdefault("checkout_url", None)
 st.session_state.setdefault("language", "en")
+st.session_state.setdefault("payment_processed", False)
 
 # --- Multilingual Prompts ---
 PROMPTS = {
@@ -93,7 +94,6 @@ from openai import OpenAI
 client = OpenAI(api_key=openai_api_key)
 
 def analyze_contract(text):
-    # Split into ~12k-character chunks if too long
     def split_chunks(t, max_chars=12000):
         paras = t.split("\n\n")
         chunks, current = [], ""
@@ -175,9 +175,6 @@ def save_summary(file_hash, summary):
         "created_at": datetime.utcnow().isoformat()
     }, upsert=True)
 
-# --- “Last Viewed” Persistence via Session State ---
-# (If user uploads the same file again in this session, summary is shown automatically)
-
 # --- ContractGuard Header & Details ---
 st.markdown("""
 # 📄 **ContractGuard**
@@ -208,7 +205,7 @@ st.session_state.language = lang_map[lang_display]
 st.markdown("---")
 
 # --- Handle Stripe Redirect via query_params ---
-if st.query_params.get("success") and st.query_params.get("hash"):
+if st.query_params.get("success") and st.query_params.get("hash") and not st.session_state.payment_processed:
     fh = st.query_params.get("hash")[0]
     text = get_contract_text_by_hash(fh)
     if text:
@@ -224,8 +221,8 @@ if st.query_params.get("success") and st.query_params.get("hash"):
                 out = analyze_contract(text)
                 st.session_state.analysis_output = out
                 save_summary(fh, out)
-        # Remove success/hash from URL for a cleaner experience
-        st.experimental_set_query_params()  # clears all query params
+        st.session_state.payment_processed = True
+        # leave params in place so summary shows; don’t clear yet
 
 # --- Upload Section ---
 st.markdown("## Upload Your Contract")
@@ -241,6 +238,9 @@ if uploaded_file:
         st.session_state.analysis_output = existing
     else:
         st.session_state.analysis_output = ""
+    st.session_state.payment_processed = False  # reset on new upload
+    # Automatically scroll to preview/summary
+    st.experimental_rerun()
 
 # --- Show Preview & Flow ---
 if st.session_state.contract_text:
