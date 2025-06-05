@@ -205,24 +205,25 @@ st.session_state.language = lang_map[lang_display]
 st.markdown("---")
 
 # --- Handle Stripe Redirect via query_params ---
-if st.query_params.get("success") and st.query_params.get("hash") and not st.session_state.payment_processed:
-    fh = st.query_params.get("hash")[0]
-    text = get_contract_text_by_hash(fh)
-    if text:
-        st.session_state.contract_text = text
-        st.session_state.file_hash = fh
-        st.session_state.uploaded_filename = "Recovered after payment"
-        existing = get_summary_by_hash(fh)
-        if existing:
-            st.session_state.analysis_output = existing
-        else:
-            st.success("✅ Payment confirmed! Analyzing your contract…")
-            with st.spinner("Analyzing…"):
-                out = analyze_contract(text)
-                st.session_state.analysis_output = out
-                save_summary(fh, out)
-        st.session_state.payment_processed = True
-        # leave params in place so summary shows; don’t clear yet
+success_hash = None
+if st.query_params.get("success") and st.query_params.get("hash"):
+    # User just paid for this file; always run analysis if not already saved!
+    success_hash = st.query_params.get("hash")[0]
+    st.session_state.file_hash = success_hash
+    st.session_state.contract_text = get_contract_text_by_hash(success_hash)
+    st.session_state.uploaded_filename = "Recovered after payment"
+    existing_summary = get_summary_by_hash(success_hash)
+    if existing_summary:
+        st.session_state.analysis_output = existing_summary
+    elif st.session_state.contract_text:
+        st.success("✅ Payment confirmed! Analyzing your contract…")
+        with st.spinner("Analyzing…"):
+            output = analyze_contract(st.session_state.contract_text)
+            st.session_state.analysis_output = output
+            save_summary(success_hash, output)
+    # Clean the URL so refresh doesn't re-trigger analysis
+    st.experimental_set_query_params()
+    st.session_state.checkout_url = None
 
 # --- Upload Section ---
 st.markdown("## Upload Your Contract")
@@ -238,8 +239,7 @@ if uploaded_file:
         st.session_state.analysis_output = existing
     else:
         st.session_state.analysis_output = ""
-    st.session_state.payment_processed = False  # reset on new upload
-    # Automatically scroll to preview/summary
+    st.session_state.checkout_url = None
     st.experimental_rerun()
 
 # --- Show Preview & Flow ---
@@ -250,14 +250,11 @@ if st.session_state.contract_text:
     st.write("### Contract Preview")
     st.code(st.session_state.contract_text[:1000])
 
-    already = file_already_paid(st.session_state.file_hash)
-
-    # --- If summary exists, render only once ---
+    # If summary exists, render only once
     if st.session_state.analysis_output:
         st.markdown("---")
         st.subheader("🔍 Contract Summary & Suggestions")
         st.markdown(st.session_state.analysis_output)
-
         # Copy to Clipboard
         if st.button("📋 Copy to Clipboard"):
             st.markdown(
@@ -266,7 +263,6 @@ if st.session_state.contract_text:
                 unsafe_allow_html=True
             )
             st.success("Copied to clipboard!")
-
         # Download as PDF
         pdf = FPDF()
         pdf.add_page()
@@ -277,34 +273,43 @@ if st.session_state.contract_text:
         buffer = BytesIO(pdf.output(dest='S').encode('latin1'))
         if st.download_button("📄 Download as PDF", data=buffer, file_name="contract_summary.pdf", mime="application/pdf"):
             st.success("Download started")
-
-    # --- Otherwise, show Stripe payment flow if not paid ---
-    elif not already:
-        st.markdown("### 🔐 Unlock Full Analysis for $5")
-        if st.button("Generate Stripe Link"):
-            session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=[{
-                    'price_data': {
-                        'currency': 'usd',
-                        'product_data': {'name': PRODUCT_NAME},
-                        'unit_amount': PRODUCT_PRICE,
-                    },
-                    'quantity': 1,
-                }],
-                mode='payment',
-                success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
-                cancel_url=f"{REAL_URL}?canceled=true"
-            )
-            st.session_state.checkout_url = session.url
-
-        if st.session_state.checkout_url:
-            st.markdown("---")
-            st.success("✅ Stripe checkout link generated")
-            st.markdown(
-                f"[👉 Click here to securely pay with Stripe]({st.session_state.checkout_url})",
-                unsafe_allow_html=True
-            )
+    else:
+        # Check if paid (should work for both fresh and paid)
+        if file_already_paid(st.session_state.file_hash):
+            # If paid but summary missing, allow to run analysis
+            st.success("✅ Payment previously confirmed! Analyzing your contract…")
+            with st.spinner("Analyzing…"):
+                output = analyze_contract(st.session_state.contract_text)
+                st.session_state.analysis_output = output
+                save_summary(st.session_state.file_hash, output)
+            st.experimental_rerun()
+        else:
+            # Not paid yet
+            st.markdown("### 🔐 Unlock Full Analysis for $5")
+            if st.button("Generate Stripe Link"):
+                session = stripe.checkout.Session.create(
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price_data': {
+                            'currency': 'usd',
+                            'product_data': {'name': PRODUCT_NAME},
+                            'unit_amount': PRODUCT_PRICE,
+                        },
+                        'quantity': 1,
+                    }],
+                    mode='payment',
+                    success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
+                    cancel_url=f"{REAL_URL}?canceled=true"
+                )
+                st.session_state.checkout_url = session.url
+            if st.session_state.checkout_url:
+                st.markdown("---")
+                st.success("✅ Stripe checkout link generated")
+                st.markdown(
+                    f"[👉 Click here to securely pay with Stripe]({st.session_state.checkout_url})",
+                    unsafe_allow_html=True
+                )
 
 elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment was canceled. Try again.")
+
