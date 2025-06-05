@@ -204,12 +204,16 @@ Upload any contract and get a clear, AI-powered summary with key clauses and pot
 """)
 
 # --- Language Selection ---
-st.session_state.language = st.selectbox(
+lang_display = st.selectbox(
     "Choose summary language:",
-    options=[("English","en"), ("Español","es"), ("Português","pt")],
-    format_func=lambda x: x[0],
-    index=["en","es","pt"].index(st.session_state.language)
-)[1]
+    ["English", "Español", "Português"],
+    index=["English", "Español", "Português"].index(
+        {"en": "English", "es": "Español", "pt": "Português"}[st.session_state.language]
+    )
+)
+# Map display value to code
+lang_map = {"English": "en", "Español": "es", "Português": "pt"}
+st.session_state.language = lang_map[lang_display]
 
 st.markdown("---")
 
@@ -235,7 +239,7 @@ if st.query_params.get("success") and st.query_params.get("hash"):
 
 # --- Upload Section ---
 st.markdown("## Upload Your Contract")
-uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf","docx"])
+uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf", "docx"])
 if uploaded_file:
     ctx, fh = extract_text_and_hash(uploaded_file)
     st.session_state.contract_text = ctx
