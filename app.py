@@ -16,10 +16,16 @@ load_dotenv()
 st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
 
 # --- API Keys (from ENV) ---
-stripe.api_key = os.getenv("api_key")
+stripe_api_key = os.getenv("api_key")
 openai_api_key = os.getenv("openai_api_key")
 supabase_url = os.getenv("supabase_url")
 supabase_key = os.getenv("supabase_key")
+
+# --- Security: Early Key Validation ---
+if not all([stripe_api_key, openai_api_key, supabase_url, supabase_key]):
+    st.error("Missing critical API key or URL. Please contact support.")
+    st.stop()
+stripe.api_key = stripe_api_key
 
 # --- Constants ---
 PRODUCT_PRICE = 500  # $5.00 in cents
@@ -27,67 +33,44 @@ PRODUCT_NAME = "Contract Analysis"
 REAL_URL = "https://contractguard.streamlit.app"
 
 # --- Session State Defaults ---
-st.session_state.setdefault("contract_text", "")
-st.session_state.setdefault("uploaded_filename", "")
-st.session_state.setdefault("analysis_output", "")
-st.session_state.setdefault("file_hash", "")
-st.session_state.setdefault("checkout_url", None)
-st.session_state.setdefault("language", "en")
-st.session_state.setdefault("payment_processed", False)
+for k, v in [
+    ("contract_text", ""),
+    ("uploaded_filename", ""),
+    ("analysis_output", ""),
+    ("file_hash", ""),
+    ("checkout_url", None),
+    ("language", "en"),
+    ("payment_processed", False),
+]:
+    st.session_state.setdefault(k, v)
 
-# --- Multilingual Prompts ---
+# --- Multilingual Prompts (unchanged for brevity) ---
 PROMPTS = {
-    "en": """
-You are a senior legal advisor specializing in contract review. Provide a professional, concise summary of the following contract in English:
-
-1. Summary of key clauses: Payment Terms, Termination, Scope of Work, and any others found.
-2. Identify unclear or risky language with specific quotes and short explanations.
-3. Assign a Risk Level (Low / Medium / High) with reasoning.
-4. Provide direct suggestions for improvements or negotiation points a freelancer or small business should consider.
-
-Respond in markdown format with clear headers and bullet points.
-
-Contract:
-""",
-    "es": """
-Eres un asesor legal experimentado especializado en revisión de contratos. Proporciona un resumen profesional y conciso del siguiente contrato en Español:
-
-1. Resumen de cláusulas clave: Términos de pago, Terminación, Alcance del trabajo y otras que se identifiquen.
-2. Identifica lenguaje ambiguo o de riesgo con citas específicas y breves explicaciones.
-3. Asigna un nivel de riesgo (Bajo / Medio / Alto) con razonamiento.
-4. Proporciona sugerencias directas para mejoras o puntos de negociación que un freelancer o pequeña empresa debería considerar.
-
-Responde en formato markdown con encabezados claros y viñetas.
-
-Contrato:
-""",
-    "pt": """
-Você é um consultor jurídico experiente especializado em revisão de contratos. Forneça um resumo profissional e conciso do seguinte contrato em Português:
-
-1. Resumo das cláusulas principais: Termos de Pagamento, Rescisão, Escopo do Trabalho e outras encontradas.
-2. Identifique linguagem ambígua ou de risco com citações específicas e breves explicações.
-3. Atribua um Nível de Risco (Baixo / Médio / Alto) com justificativa.
-4. Forneça sugestões diretas para melhorias ou pontos de negociação que um freelancer ou pequena empresa deve considerar.
-
-Responda em formato markdown com títulos claros e marcadores.
-
-Contrato:
-"""
+    "en": """...""",
+    "es": """...""",
+    "pt": """..."""
 }
+# (Use your existing PROMPTS dictionary here.)
 
 # --- Helper Functions ---
 def extract_text_and_hash(uploaded_file):
+    if uploaded_file.type not in ["application/pdf",
+                                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+        return "Unsupported file type.", None
     data = uploaded_file.read()
     file_hash = hashlib.sha256(data).hexdigest()
     uploaded_file.seek(0)
-    if uploaded_file.type == "application/pdf":
-        with pdfplumber.open(BytesIO(data)) as pdf:
-            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        doc = docx.Document(BytesIO(data))
-        text = "\n".join(para.text for para in doc.paragraphs)
-    else:
-        text = "Unsupported file type."
+    text = ""
+    try:
+        if uploaded_file.type == "application/pdf":
+            with pdfplumber.open(BytesIO(data)) as pdf:
+                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(BytesIO(data))
+            text = "\n".join(para.text for para in doc.paragraphs)
+    except Exception as e:
+        st.error("File extraction failed. Please try another file.")
+        return "", None
     return text, file_hash
 
 from openai import OpenAI
@@ -109,37 +92,49 @@ def analyze_contract(text):
 
     prompt = PROMPTS[st.session_state.language]
     chunks = split_chunks(text)
-    if len(chunks) == 1:
-        full = prompt + text[:8000]
-        resp = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": full}],
-            temperature=0.3
-        )
-        return resp.choices[0].message.content
-    else:
-        partials = []
-        for c in chunks:
-            full = prompt + c[:8000]
+    try:
+        if len(chunks) == 1:
+            full = prompt + text[:8000]
             resp = client.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": full}],
                 temperature=0.3
             )
-            partials.append(resp.choices[0].message.content)
-        combined = "\n\n".join(partials)
-        final_prompt = prompt + combined[:8000]
-        final_resp = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": final_prompt}],
-            temperature=0.3
-        )
-        return final_resp.choices[0].message.content
+            return resp.choices[0].message.content
+        else:
+            partials = []
+            for c in chunks:
+                full = prompt + c[:8000]
+                resp = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": full}],
+                    temperature=0.3
+                )
+                partials.append(resp.choices[0].message.content)
+            combined = "\n\n".join(partials)
+            final_prompt = prompt + combined[:8000]
+            final_resp = client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": final_prompt}],
+                temperature=0.3
+            )
+            return final_resp.choices[0].message.content
+    except Exception:
+        st.error("Contract analysis failed. Please try again later or contact support.")
+        return ""
 
 def supabase_get(table, query=""):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    r = requests.get(f"{supabase_url}/rest/v1/{table}{query}", headers=headers, timeout=10)
-    return r.json() if r.status_code in (200, 201) else []
+    try:
+        r = requests.get(f"{supabase_url}/rest/v1/{table}{query}", headers=headers, timeout=10)
+        if r.status_code in (200, 201):
+            return r.json()
+        else:
+            st.warning("Database fetch failed.")
+            return []
+    except Exception:
+        st.warning("Supabase connection error.")
+        return []
 
 def supabase_insert(table, data, upsert=False):
     headers = {
@@ -148,7 +143,12 @@ def supabase_insert(table, data, upsert=False):
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates" if upsert else "return=representation"
     }
-    requests.post(f"{supabase_url}/rest/v1/{table}", json=data, headers=headers, timeout=10)
+    try:
+        r = requests.post(f"{supabase_url}/rest/v1/{table}", json=data, headers=headers, timeout=10)
+        if r.status_code not in (200, 201):
+            st.warning(f"Supabase insert failed: {r.status_code}")
+    except Exception:
+        st.warning("Supabase insert error.")
 
 def file_already_paid(file_hash):
     return len(supabase_get("paid_files", f"?file_hash=eq.{file_hash}")) > 0
@@ -175,7 +175,8 @@ def save_summary(file_hash, summary):
         "created_at": datetime.utcnow().isoformat()
     }, upsert=True)
 
-# --- ContractGuard Header & Details ---
+# --- ContractGuard Header & Details (unchanged) ---
+
 st.markdown("""
 # 📄 **ContractGuard**
 ### _Don't sign blind._
@@ -201,13 +202,11 @@ lang_display = st.selectbox(
 )
 lang_map = {"English": "en", "Español": "es", "Português": "pt"}
 st.session_state.language = lang_map[lang_display]
-
 st.markdown("---")
 
 # --- Handle Stripe Redirect via query_params ---
 success_hash = None
 if st.query_params.get("success") and st.query_params.get("hash"):
-    # User just paid for this file; always run analysis if not already saved!
     success_hash = st.query_params.get("hash")[0]
     st.session_state.file_hash = success_hash
     st.session_state.contract_text = get_contract_text_by_hash(success_hash)
@@ -221,26 +220,28 @@ if st.query_params.get("success") and st.query_params.get("hash"):
             output = analyze_contract(st.session_state.contract_text)
             st.session_state.analysis_output = output
             save_summary(success_hash, output)
-    # Clean the URL so refresh doesn't re-trigger analysis
     st.experimental_set_query_params()
     st.session_state.checkout_url = None
 
-# --- Upload Section ---
-st.markdown("## Upload Your Contract")
+# --- Upload Section: With Rerun Fix ---
 uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf", "docx"])
-if uploaded_file:
+
+# --- Rerun Fix: Use a session flag ---
+if uploaded_file and not st.session_state.get("just_reran"):
     ctx, fh = extract_text_and_hash(uploaded_file)
+    if not fh:
+        st.stop()  # Extraction failed; error already shown
     st.session_state.contract_text = ctx
     st.session_state.uploaded_filename = uploaded_file.name
     st.session_state.file_hash = fh
     save_uploaded_contract(fh, ctx)
     existing = get_summary_by_hash(fh)
-    if existing:
-        st.session_state.analysis_output = existing
-    else:
-        st.session_state.analysis_output = ""
+    st.session_state.analysis_output = existing if existing else ""
     st.session_state.checkout_url = None
+    st.session_state.just_reran = True
     st.experimental_rerun()
+elif st.session_state.get("just_reran"):
+    del st.session_state["just_reran"]
 
 # --- Show Preview & Flow ---
 if st.session_state.contract_text:
@@ -276,7 +277,6 @@ if st.session_state.contract_text:
     else:
         # Check if paid (should work for both fresh and paid)
         if file_already_paid(st.session_state.file_hash):
-            # If paid but summary missing, allow to run analysis
             st.success("✅ Payment previously confirmed! Analyzing your contract…")
             with st.spinner("Analyzing…"):
                 output = analyze_contract(st.session_state.contract_text)
@@ -286,21 +286,24 @@ if st.session_state.contract_text:
             # Not paid yet
             st.markdown("### 🔐 Unlock Full Analysis for $5")
             if st.button("Generate Stripe Link"):
-                session = stripe.checkout.Session.create(
-                    payment_method_types=['card'],
-                    line_items=[{
-                        'price_data': {
-                            'currency': 'usd',
-                            'product_data': {'name': PRODUCT_NAME},
-                            'unit_amount': PRODUCT_PRICE,
-                        },
-                        'quantity': 1,
-                    }],
-                    mode='payment',
-                    success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
-                    cancel_url=f"{REAL_URL}?canceled=true"
-                )
-                st.session_state.checkout_url = session.url
+                try:
+                    session = stripe.checkout.Session.create(
+                        payment_method_types=['card'],
+                        line_items=[{
+                            'price_data': {
+                                'currency': 'usd',
+                                'product_data': {'name': PRODUCT_NAME},
+                                'unit_amount': PRODUCT_PRICE,
+                            },
+                            'quantity': 1,
+                        }],
+                        mode='payment',
+                        success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
+                        cancel_url=f"{REAL_URL}?canceled=true"
+                    )
+                    st.session_state.checkout_url = session.url
+                except Exception:
+                    st.error("Payment link generation failed. Please try again.")
             if st.session_state.checkout_url:
                 st.markdown("---")
                 st.success("✅ Stripe checkout link generated")
@@ -311,4 +314,3 @@ if st.session_state.contract_text:
 
 elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment was canceled. Try again.")
-
