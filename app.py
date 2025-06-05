@@ -16,11 +16,12 @@ load_dotenv()
 # Streamlit UI
 st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
 
-# Load API keys
-stripe.api_key = st.secrets["api_key"]
-openai_api_key = st.secrets["openai_api_key"]
-supabase_url = st.secrets["supabase_url"]
-supabase_key = st.secrets["supabase_key"]
+# Load API keys from environment variables
+stripe.api_key    = os.getenv("STRIPE_API_KEY")
+openai_api_key    = os.getenv("OPENAI_API_KEY")
+supabase_url      = os.getenv("SUPABASE_URL")
+supabase_key      = os.getenv("SUPABASE_KEY")
+
 
 st.markdown("""
 # 📄 **ContractGuard**
