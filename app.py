@@ -93,7 +93,7 @@ from openai import OpenAI
 client = OpenAI(api_key=openai_api_key)
 
 def analyze_contract(text):
-    # Break into ~12k-character chunks if too long
+    # Split into ~12k-character chunks if too long
     def split_chunks(t, max_chars=12000):
         paras = t.split("\n\n")
         chunks, current = [], ""
@@ -138,8 +138,8 @@ def analyze_contract(text):
 
 def supabase_get(table, query=""):
     headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    response = requests.get(f"{supabase_url}/rest/v1/{table}{query}", headers=headers, timeout=10)
-    return response.json() if response.status_code in (200, 201) else []
+    r = requests.get(f"{supabase_url}/rest/v1/{table}{query}", headers=headers, timeout=10)
+    return r.json() if r.status_code in (200, 201) else []
 
 def supabase_insert(table, data, upsert=False):
     headers = {
@@ -187,7 +187,7 @@ if last_hash and not st.session_state.contract_text:
         if summary:
             st.session_state.analysis_output = summary
 
-# --- Header & ContractGuard Introduction ---
+# --- ContractGuard Header & Details ---
 st.markdown("""
 # 📄 **ContractGuard**
 ### _Don't sign blind._
@@ -231,7 +231,7 @@ if st.query_params.get("success") and st.query_params.get("hash"):
                 st.session_state.analysis_output = out
                 save_summary(fh, out)
         # Persist last viewed in URL
-        st.experimental_set_query_params(last_hash=fh)
+        st.query_params = {"last_hash": [fh]}
 
 # --- Upload Section ---
 st.markdown("## Upload Your Contract")
@@ -247,8 +247,8 @@ if uploaded_file:
         st.session_state.analysis_output = existing
     else:
         st.session_state.analysis_output = ""
-    # Persist last viewed
-    st.experimental_set_query_params(last_hash=fh)
+    # Persist last viewed in URL
+    st.query_params = {"last_hash": [fh]}
 
 # --- Show Preview & Flow ---
 if st.session_state.contract_text:
