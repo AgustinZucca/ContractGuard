@@ -17,10 +17,10 @@ load_dotenv()
 st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
 
 # Load API keys from environment variables
-stripe.api_key    = os.getenv("STRIPE_API_KEY")
-openai_api_key    = os.getenv("OPENAI_API_KEY")
-supabase_url      = os.getenv("SUPABASE_URL")
-supabase_key      = os.getenv("SUPABASE_KEY")
+stripe.api_key    = os.getenv("api_key")
+openai_api_key    = os.getenv("openai_api_key")
+supabase_url      = os.getenv("supabase_url")
+supabase_key      = os.getenv("supabase_key")
 
 
 st.markdown("""
