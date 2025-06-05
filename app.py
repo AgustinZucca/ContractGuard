@@ -193,23 +193,41 @@ lang_map = {"English": "en", "Español": "es", "Português": "pt"}
 st.session_state.language = lang_map[lang_display]
 st.markdown("---")
 
-# --- Stripe Redirect Handling ---
+# --- Handle Stripe Redirect via query_params ---
 if st.query_params.get("success") and st.query_params.get("hash"):
     success_hash = st.query_params.get("hash")[0]
     st.session_state.file_hash = success_hash
-    st.session_state.contract_text = get_contract_text_by_hash(success_hash)
+
+    # Reload contract text from Supabase
+    contract_text = get_contract_text_by_hash(success_hash)
+    if not contract_text:
+        st.error("Could not recover uploaded contract. Please re-upload and pay again.")
+        st.experimental_set_query_params()
+        st.stop()
+
+    st.session_state.contract_text = contract_text
     st.session_state.uploaded_filename = "Recovered after payment"
+
+    # Mark file as paid
+    supabase_insert("paid_files", {
+        "file_hash": success_hash,
+        "paid_at": datetime.utcnow().isoformat()
+    }, upsert=True)
+
+    # If we already have a saved summary, just load it; otherwise run analysis
     existing_summary = get_summary_by_hash(success_hash)
     if existing_summary:
         st.session_state.analysis_output = existing_summary
-    elif st.session_state.contract_text:
-        st.success("✅ Payment confirmed! Analyzing…")
+    else:
+        st.success("✅ Payment confirmed! Analyzing your contract…")
         with st.spinner("Analyzing…"):
             out = analyze_contract(st.session_state.contract_text)
             st.session_state.analysis_output = out
             save_summary(success_hash, out)
+
     st.experimental_set_query_params()
     st.session_state.checkout_url = None
+
 
 # --- File Uploader & Processing ---
 uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf", "docx"])
