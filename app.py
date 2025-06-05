@@ -226,11 +226,10 @@ if st.query_params.get("success") and st.query_params.get("hash"):
 # --- Upload Section: With Rerun Fix ---
 uploaded_file = st.file_uploader("Choose a PDF or Word (.docx) file:", type=["pdf", "docx"])
 
-# --- Rerun Fix: Use a session flag ---
 if uploaded_file and not st.session_state.get("just_reran"):
     ctx, fh = extract_text_and_hash(uploaded_file)
     if not fh:
-        st.stop()  # Extraction failed; error already shown
+        st.stop()
     st.session_state.contract_text = ctx
     st.session_state.uploaded_filename = uploaded_file.name
     st.session_state.file_hash = fh
@@ -240,8 +239,10 @@ if uploaded_file and not st.session_state.get("just_reran"):
     st.session_state.checkout_url = None
     st.session_state.just_reran = True
     st.experimental_rerun()
-elif st.session_state.get("just_reran"):
+
+if st.session_state.get("just_reran"):
     del st.session_state["just_reran"]
+
 
 # --- Show Preview & Flow ---
 if st.session_state.contract_text:
