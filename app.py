@@ -26,8 +26,6 @@ supabase_key      = os.getenv("SUPABASE_KEY")
 
 # Quick sanity check (remove in production if you like):
 st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
-st.write("Stripe key loaded?", bool(stripe.api_key))
-st.write("OpenAI key loaded?", bool(openai_api_key))
 
 # Product settings
 PRODUCT_PRICE = 500  # $5.00 in cents
