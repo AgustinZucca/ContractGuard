@@ -1,238 +1,192 @@
 import streamlit as st
-import openai
-import pdfplumber
-import docx
 import os
 import stripe
-import hashlib
 import requests
+import hashlib
+import pdfplumber
+import docx
 from io import BytesIO
 from dotenv import load_dotenv
-from datetime import datetime
 from fpdf import FPDF
+from openai import OpenAI
 
+# ─── LOAD LOCAL .env (optional) ───────────────────────────────────────────────────
 load_dotenv()
 
-# ─── CONFIGURATION ────────────────────────────────────────────────────────────────
+# ─── ENVIRONMENT VARIABLE CHECK ───────────────────────────────────────────────────
+REQUIRED = ["STRIPE_API_KEY", "OPENAI_API_KEY", "SUPABASE_URL", "SUPABASE_KEY"]
+missing = [v for v in REQUIRED if not os.getenv(v)]
+if missing:
+    st.error(f"Missing environment variables: {', '.join(missing)}")
+    st.stop()
 
-# Replace with your Render-deployed URL:
-REAL_URL = "https://your-render-app.onrender.com"
-
-# Load API keys from environment variables (must match Render env var names):
+# ─── CONFIG ───────────────────────────────────────────────────────────────────────
 stripe.api_key    = os.getenv("STRIPE_API_KEY")
 openai_api_key    = os.getenv("OPENAI_API_KEY")
-supabase_url      = os.getenv("SUPABASE_URL")
+supabase_url      = os.getenv("SUPABASE_URL").rstrip("/")  # no trailing slash
 supabase_key      = os.getenv("SUPABASE_KEY")
 
-# Quick sanity check (remove in production if you like):
-st.set_page_config(page_title="ContractGuard - Contract Analyzer", layout="centered")
+REAL_URL          = "https://your-render-app.onrender.com"
+PRODUCT_PRICE     = 500  # $5.00 in cents
+PRODUCT_NAME      = "Contract Analysis"
 
-# Product settings
-PRODUCT_PRICE = 500  # $5.00 in cents
-PRODUCT_NAME = "Contract Analysis"
-
-# ─── SESSION STATE SETUP ───────────────────────────────────────────────────────────
-
-st.session_state.setdefault("contract_text", "")
-st.session_state.setdefault("uploaded_filename", "")
-st.session_state.setdefault("analysis_output", "")
-st.session_state.setdefault("file_hash", "")
-st.session_state.setdefault("checkout_url", None)
-# Flag to indicate we just completed a Stripe payment and generated a new summary
-st.session_state.setdefault("just_paid", False)
-
-# ─── HELPERS ───────────────────────────────────────────────────────────────────────
-
-def extract_text_and_hash(file):
-    file_bytes = file.read()
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
-    file.seek(0)
-    if file.type == "application/pdf":
-        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        doc = docx.Document(BytesIO(file_bytes))
-        text = "\n".join([para.text for para in doc.paragraphs])
-    else:
-        text = "Unsupported file type."
-    return text, file_hash
-
-# Initialize OpenAI client
-from openai import OpenAI
-client = OpenAI(api_key=openai_api_key)
-
-def analyze_contract(text):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": PROMPT_TEMPLATE + text[:8000]}],
-        temperature=0.3
-    )
-    return response.choices[0].message.content
-
-# Supabase helpers
-def get_summary_by_hash(file_hash):
-    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    url = f"{supabase_url}/rest/v1/summaries?file_hash=eq.{file_hash}"
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200 and len(r.json()) > 0:
-        return r.json()[0].get("summary", "")
-    return ""
-
-def file_already_paid(file_hash):
-    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    url = f"{supabase_url}/rest/v1/paid_files?file_hash=eq.{file_hash}"
-    r = requests.get(url, headers=headers)
-    return r.status_code == 200 and len(r.json()) > 0
-
-def save_uploaded_contract(file_hash, contract_text):
-    headers = {
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-    data = {"file_hash": file_hash, "text": contract_text}
-    url = f"{supabase_url}/rest/v1/uploaded_contracts"
-    requests.post(url, json=data, headers=headers)
-
-def save_summary(file_hash, summary_text):
-    headers = {
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-    data = {"file_hash": file_hash, "summary": summary_text}
-    url = f"{supabase_url}/rest/v1/summaries"
-    requests.post(url, json=data, headers=headers)
-
-def save_paid_file(file_hash):
-    # Call this right after a successful payment so file_already_paid() returns True next time.
-    headers = {
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-    data = {"file_hash": file_hash}
-    url = f"{supabase_url}/rest/v1/paid_files"
-    requests.post(url, json=data, headers=headers)
-
-def get_contract_text_by_hash(file_hash):
-    headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-    url = f"{supabase_url}/rest/v1/uploaded_contracts?file_hash=eq.{file_hash}"
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200 and len(r.json()) > 0:
-        return r.json()[0].get("text", "")
-    return ""
-
-# GPT prompt template
-PROMPT_TEMPLATE = """
-You are a senior legal advisor specializing in contract review. Provide a professional, concise summary of the following contract:
-
-1. Summary of key clauses: Payment Terms, Termination, Scope of Work, and any others found.
-2. Identify unclear or risky language with specific quotes and short explanations.
-3. Assign a Risk Level (Low / Medium / High) with reasoning.
-4. Provide direct suggestions for improvements or negotiation points a freelancer or small business should consider.
-
-Respond in markdown format with clear headers and bullet points.
-
-Contract:
-"""
-
-# ─── STREAMLIT UI ──────────────────────────────────────────────────────────────────
-
+# ─── STREAMLIT SETUP ──────────────────────────────────────────────────────────────
+st.set_page_config(page_title="ContractGuard", layout="centered")
 st.markdown("""
 # 📄 **ContractGuard**
 ### _Don't sign blind._
 
-Upload your contract and get a clear, AI-powered summary with key clauses, red flags, and what to change — in seconds.
-
-✅ Understand payment terms and scope  
-🚩 Spot risky or vague language  
-🛠️ Know what to renegotiate  
-📱 Optimized for mobile  
+Upload your contract and get a clear, AI-powered summary — in seconds.
 🔐 One-time payment of **$5**
-
 ---
 """)
 
-# ─── HANDLE STRIPE REDIRECT (AFTER PAYMENT) ─────────────────────────────────────────
+# ─── SESSION STATE ───────────────────────────────────────────────────────────────
+for key, default in {
+    "contract_text": "",
+    "uploaded_filename": "",
+    "analysis_output": "",
+    "file_hash": "",
+    "checkout_url": None,
+    "just_paid": False
+}.items():
+    st.session_state.setdefault(key, default)
 
+# ─── HELPERS ──────────────────────────────────────────────────────────────────────
+def extract_text_and_hash(uploaded_file):
+    data = uploaded_file.read()
+    h = hashlib.sha256(data).hexdigest()
+    uploaded_file.seek(0)
+    if uploaded_file.type == "application/pdf":
+        with pdfplumber.open(BytesIO(data)) as pdf:
+            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    else:  # docx
+        doc = docx.Document(BytesIO(data))
+        text = "\n".join(p.text for p in doc.paragraphs)
+    return text, h
+
+PROMPT_TEMPLATE = """
+You are a senior legal advisor. Provide a concise markdown summary of this contract:
+
+1. Key clauses: Payment Terms, Termination, Scope of Work, etc.
+2. Unclear/risky language with quotes + brief notes.
+3. Risk Level (Low/Medium/High) with reasoning.
+4. Suggestions for negotiation.
+
+Contract:
+"""
+
+client = OpenAI(api_key=openai_api_key)
+
+def analyze_contract(text):
+    resp = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role":"user","content":PROMPT_TEMPLATE + text[:8000]}],
+        temperature=0.3
+    )
+    return resp.choices[0].message.content
+
+def supabase_get(table, eq_field, eq_value):
+    hdr = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+    url = f"{supabase_url}/rest/v1/{table}?{eq_field}=eq.{eq_value}"
+    r = requests.get(url, headers=hdr)
+    return r.json() if r.status_code==200 else []
+
+def get_summary_by_hash(h):
+    rows = supabase_get("summaries", "file_hash", h)
+    return rows[0]["summary"] if rows else ""
+
+def file_already_paid(h):
+    return bool(supabase_get("paid_files", "file_hash", h))
+
+def save_to_table(table, payload):
+    hdr = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+    requests.post(f"{supabase_url}/rest/v1/{table}", json=payload, headers=hdr)
+
+def save_uploaded_contract(h, txt):
+    save_to_table("uploaded_contracts", {"file_hash": h, "text": txt})
+
+def save_summary(h, summary):
+    save_to_table("summaries", {"file_hash": h, "summary": summary})
+
+def save_paid_file(h):
+    save_to_table("paid_files", {"file_hash": h})
+
+def get_contract_text_by_hash(h):
+    rows = supabase_get("uploaded_contracts", "file_hash", h)
+    return rows[0]["text"] if rows else ""
+
+# ─── HANDLE STRIPE REDIRECT ────────────────────────────────────────────────────────
 if st.query_params.get("success") and st.query_params.get("hash"):
-    file_hash = st.query_params.get("hash")
-    text = get_contract_text_by_hash(file_hash)
-    if text:
-        st.session_state.contract_text = text
-        st.session_state.file_hash = file_hash
-        st.session_state.uploaded_filename = "Recovered after payment"
-
-        existing = get_summary_by_hash(file_hash)
+    h = st.query_params["hash"]
+    txt = get_contract_text_by_hash(h)
+    if txt:
+        st.session_state.contract_text   = txt
+        st.session_state.file_hash       = h
+        st.session_state.uploaded_filename = "After Payment"
+        existing = get_summary_by_hash(h)
         if existing:
-            # There was already a saved summary: show it as “previously saved”
             st.session_state.analysis_output = existing
             st.session_state.just_paid = False
         else:
-            # First time payment for this file: generate a new summary now
             st.session_state.just_paid = True
-            st.session_state.analysis_output = ""  # clear any old content
-            st.success("✅ Payment confirmed! Analyzing your contract...")
-            with st.spinner("Analyzing..."):
-                output = analyze_contract(text)
-                st.session_state.analysis_output = output
-                save_summary(file_hash, output)
-                save_paid_file(file_hash)  # mark as paid in Supabase
+            st.success("✅ Payment confirmed! Analyzing…")
+            with st.spinner("Analyzing…"):
+                out = analyze_contract(txt)
+                st.session_state.analysis_output = out
+                save_summary(h, out)
+                save_paid_file(h)
 
-# ─── UPLOAD SECTION ─────────────────────────────────────────────────────────────────
-
-uploaded_file = st.file_uploader("Upload a contract (PDF or Word)", type=["pdf", "docx"])
-if uploaded_file:
-    contract_text, file_hash = extract_text_and_hash(uploaded_file)
-    st.session_state.contract_text = contract_text
-    st.session_state.uploaded_filename = uploaded_file.name
-    st.session_state.file_hash = file_hash
-    st.session_state.analysis_output = ""
-    st.session_state.just_paid = False  # reset flag on new upload
-
-    save_uploaded_contract(file_hash, contract_text)
-
-    # If this file was paid & summarized previously, load that summary
-    existing = get_summary_by_hash(file_hash)
+# ─── UPLOAD WIDGET ───────────────────────────────────────────────────────────────
+up = st.file_uploader("Upload PDF or DOCX", type=["pdf","docx"])
+if up:
+    txt, h = extract_text_and_hash(up)
+    st.session_state.update({
+        "contract_text": txt,
+        "file_hash": h,
+        "uploaded_filename": up.name,
+        "analysis_output": "",
+        "just_paid": False
+    })
+    save_uploaded_contract(h, txt)
+    existing = get_summary_by_hash(h)
     if existing:
         st.session_state.analysis_output = existing
 
-# ─── SHOW PREVIEW / PAYMENT PROMPT / PREVIOUSLY SAVED ───────────────────────────────
-
+# ─── PREVIEW / PAYMENT FLOW / PREVIOUSLY SAVED ────────────────────────────────────
 if st.session_state.contract_text:
     st.markdown("---")
-    if st.session_state.uploaded_filename:
-        st.info(f"✅ Uploaded: {st.session_state.uploaded_filename}")
+    st.info(f"📄 Uploaded: {st.session_state.uploaded_filename}")
     st.write("### Contract Preview")
-    st.code(st.session_state.contract_text[:1000])
+    st.code(st.session_state.contract_text[:500])
 
-    already_paid = file_already_paid(st.session_state.file_hash)
+    paid = file_already_paid(st.session_state.file_hash)
 
-    # If we have an analysis_output AND we did NOT just come from a fresh Stripe redirect, show “Previously Saved”
+    # Show “Previously Saved” only if we did NOT just generate a new summary
     if st.session_state.analysis_output and not st.session_state.just_paid:
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
         st.markdown(st.session_state.analysis_output)
 
-    # If this file hasn’t been paid yet, show the Stripe button
-    elif not already_paid:
+    elif not paid:
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Generate Stripe Link"):
             session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
+                payment_method_types=["card"],
                 line_items=[{
-                    'price_data': {
-                        'currency': 'usd',
-                        'product_data': {'name': PRODUCT_NAME},
-                        'unit_amount': PRODUCT_PRICE,
+                    "price_data":{
+                        "currency":"usd",
+                        "product_data":{"name":PRODUCT_NAME},
+                        "unit_amount":PRODUCT_PRICE
                     },
-                    'quantity': 1,
+                    "quantity":1
                 }],
-                mode='payment',
+                mode="payment",
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
@@ -240,14 +194,10 @@ if st.session_state.contract_text:
 
         if st.session_state.checkout_url:
             st.markdown("---")
-            st.success("✅ Stripe checkout link generated")
-            st.markdown(
-                f"[👉 Click here to securely pay with Stripe]({st.session_state.checkout_url})",
-                unsafe_allow_html=True
-            )
+            st.success("✅ Stripe link generated")
+            st.markdown(f"[Pay Now →]({st.session_state.checkout_url})", unsafe_allow_html=True)
 
-# ─── SHOW FINAL ANALYSIS & PDF DOWNLOAD ─────────────────────────────────────────────
-
+# ─── FINAL ANALYSIS + DOWNLOAD & RESET ─────────────────────────────────────────────
 if st.session_state.analysis_output:
     st.markdown("---")
     st.subheader("🔍 Contract Summary & Suggestions")
@@ -255,24 +205,17 @@ if st.session_state.analysis_output:
 
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in st.session_state.analysis_output.split("\n"):
-        pdf.multi_cell(0, 10, line)
+        pdf.multi_cell(0, 8, line)
 
-    pdf_output = pdf.output(dest='S').encode('latin1')
-    pdf_buffer = BytesIO(pdf_output)
-
-    if st.download_button(
-        "📄 Download as PDF",
-        data=pdf_buffer,
-        file_name="contract_summary.pdf",
-        mime="application/pdf"
-    ):
+    buf = BytesIO(pdf.output(dest="S").encode("latin1"))
+    if st.download_button("📄 Download as PDF", buf, "summary.pdf", "application/pdf"):
         st.success("Download started")
 
-    # Once displayed, clear the “just_paid” flag so next refresh shows “Previously Saved”
+    # clear the just_paid flag so next visit shows “Previously Saved”
     st.session_state.pop("just_paid", None)
 
 elif st.query_params.get("canceled"):
-    st.warning("⚠️ Payment was canceled. Try again when ready.")
+    st.warning("⚠️ Payment canceled.")
