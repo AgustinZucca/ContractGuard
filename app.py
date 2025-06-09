@@ -26,7 +26,7 @@ openai_api_key    = os.getenv("OPENAI_API_KEY")
 supabase_url      = os.getenv("SUPABASE_URL").rstrip("/")  # no trailing slash
 supabase_key      = os.getenv("SUPABASE_KEY")
 
-REAL_URL          = "https://your-render-app.onrender.com"
+REAL_URL          = "https://contractguard-5sm3.onrender.com/"
 PRODUCT_PRICE     = 500  # $5.00 in cents
 PRODUCT_NAME      = "Contract Analysis"
 
