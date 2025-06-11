@@ -23,7 +23,7 @@ if missing:
 # ─── CONFIG ─────────────────────────────────────────────────────────────────────
 stripe.api_key    = os.getenv("STRIPE_API_KEY")
 openai_api_key    = os.getenv("OPENAI_API_KEY")
-supabase_url      = os.getenv("SUPABASE_URL").rstrip("/")  # no trailing slash
+supabase_url      = os.getenv("SUPABASE_URL").rstrip("/")
 supabase_key      = os.getenv("SUPABASE_KEY")
 
 REAL_URL          = "https://contractguard-5sm3.onrender.com"
@@ -32,6 +32,9 @@ PRODUCT_NAME      = "Contract Analysis"
 
 # ─── STREAMLIT SETUP ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="ContractGuard", layout="centered")
+import streamlit.components.v1 as components
+components.html("<script>document.title = 'ContractGuard';</script>", height=0)
+
 st.markdown("""
 # 📄 ContractGuard for Freelancers
 ### _Don’t sign blind._
@@ -58,7 +61,7 @@ No subscriptions. No email required. Just straight-up analysis.
 ---
 
 🛡️ **Private by default.** Your contract is processed securely and never stored permanently.
-📬 **Feedback welcome!** Want features like editable summaries, multilingual review, or freelancer contract templates? Drop suggestions [here](mailto:support@contractguard.com).
+📬 **Feedback welcome!** Want features like editable summaries or freelancer templates? Drop suggestions [here](mailto:support@contractguard.com).
 """)
 
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
@@ -97,6 +100,7 @@ Contract:
 """
 
 client = OpenAI(api_key=openai_api_key)
+
 
 def analyze_preview(text):
     preview_text = text[:1000]
@@ -211,19 +215,13 @@ if st.session_state.contract_text:
 
     paid = file_already_paid(st.session_state.file_hash)
 
-    # Free preview always shown once upload
-    st.markdown("### 🕵️ Preview Analysis (Free)")
-    preview_out = analyze_preview(st.session_state.contract_text)
-    st.markdown(preview_out)
+    if not paid:
+        # Free preview for unpaid contracts
+        st.markdown("### 🕵️ Preview Analysis (Free)")
+        preview_out = analyze_preview(st.session_state.contract_text)
+        st.markdown(preview_out)
 
-    # Show “Previously Saved” only if not just paid
-    if st.session_state.analysis_output and not st.session_state.just_paid:
-        st.markdown("---")
-        st.subheader("🔍 Previously Saved Summary & Suggestions")
-        st.markdown(st.session_state.analysis_output)
-
-    # Otherwise if unpaid, show purchase option
-    elif not paid:
+        # Purchase option
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Generate Stripe Link"):
             session = stripe.checkout.Session.create(
@@ -247,8 +245,14 @@ if st.session_state.contract_text:
             st.success("✅ Stripe link generated")
             st.markdown(f"[Pay Now →]({st.session_state.checkout_url})", unsafe_allow_html=True)
 
-# ─── FINAL ANALYSIS + DOWNLOAD & RESET ─────────────────────────────────────────────
-if st.session_state.analysis_output:
+    elif st.session_state.analysis_output and not st.session_state.just_paid:
+        # Previously saved summary for paid contracts
+        st.markdown("---")
+        st.subheader("🔍 Previously Saved Summary & Suggestions")
+        st.markdown(st.session_state.analysis_output)
+
+# ─── FINAL ANALYSIS + DOWNLOAD & RESET (only after fresh payment) ─────────────────
+if st.session_state.analysis_output and st.session_state.just_paid:
     st.markdown("---")
     st.subheader("🔍 Contract Summary & Suggestions")
     st.markdown(st.session_state.analysis_output)
@@ -264,6 +268,7 @@ if st.session_state.analysis_output:
     if st.download_button("📄 Download as PDF", buf, "summary.pdf", "application/pdf"):
         st.success("Download started")
 
+    # Clear just_paid so next reload shows previously saved only
     st.session_state.pop("just_paid", None)
 
 elif st.query_params.get("canceled"):
