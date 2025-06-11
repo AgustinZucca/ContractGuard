@@ -50,6 +50,12 @@ Let AI scan the contract and tell you:
 
 ---
 
+### 👥 What freelancers say
+> “ContractGuard saved me from a one-sided contract!” – Alice, UX Designer  
+> “I spotted a termination clause that would have cost me thousands.” – Bob, Developer
+
+---
+
 ### 🔍 Free Preview — Upload your contract and see what red flags show up.
 Then, pay **$5 once** to unlock a full breakdown including:
 - Scope of work
@@ -100,7 +106,6 @@ Contract:
 """
 
 client = OpenAI(api_key=openai_api_key)
-
 
 def analyze_preview(text):
     preview_text = text[:1000]
@@ -206,7 +211,7 @@ if up:
     if existing:
         st.session_state.analysis_output = existing
 
-# ─── PREVIEW / PAYMENT FLOW / PREVIOUSLY SAVED ───────────────────────────────────
+# ─── PREVIEW / PAYMENT / PREVIOUSLY SAVED ─────────────────────────────────────────
 if st.session_state.contract_text:
     st.markdown("---")
     st.info(f"📄 Uploaded: {st.session_state.uploaded_filename}")
@@ -215,13 +220,11 @@ if st.session_state.contract_text:
 
     paid = file_already_paid(st.session_state.file_hash)
 
-    if not paid:
-        # Free preview for unpaid contracts
+    # Unpaid and not just paid: show preview + purchase
+    if not paid and not st.session_state.just_paid:
         st.markdown("### 🕵️ Preview Analysis (Free)")
         preview_out = analyze_preview(st.session_state.contract_text)
         st.markdown(preview_out)
-
-        # Purchase option
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Generate Stripe Link"):
             session = stripe.checkout.Session.create(
@@ -239,37 +242,31 @@ if st.session_state.contract_text:
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
             st.session_state.checkout_url = session.url
-
         if st.session_state.checkout_url:
             st.markdown("---")
             st.success("✅ Stripe link generated")
             st.markdown(f"[Pay Now →]({st.session_state.checkout_url})", unsafe_allow_html=True)
-
-    elif st.session_state.analysis_output and not st.session_state.just_paid:
-        # Previously saved summary for paid contracts
+    # Paid and not just paid: previously saved
+    elif paid and not st.session_state.just_paid and st.session_state.analysis_output:
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
         st.markdown(st.session_state.analysis_output)
 
-# ─── FINAL ANALYSIS + DOWNLOAD & RESET (only after fresh payment) ─────────────────
+# ─── FINAL ANALYSIS + DOWNLOAD (fresh payment only) ───────────────────────────────
 if st.session_state.analysis_output and st.session_state.just_paid:
     st.markdown("---")
     st.subheader("🔍 Contract Summary & Suggestions")
     st.markdown(st.session_state.analysis_output)
-
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in st.session_state.analysis_output.split("\n"):
         pdf.multi_cell(0, 8, line)
-
     buf = BytesIO(pdf.output(dest="S").encode("latin1"))
     if st.download_button("📄 Download as PDF", buf, "summary.pdf", "application/pdf"):
         st.success("Download started")
-
-    # Clear just_paid so next reload shows previously saved only
+    # Clear just_paid after display
     st.session_state.pop("just_paid", None)
-
-elif st.query_params.get("canceled"):
+ing elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment canceled.")
