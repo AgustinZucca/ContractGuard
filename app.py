@@ -26,7 +26,7 @@ openai_api_key    = os.getenv("OPENAI_API_KEY")
 supabase_url      = os.getenv("SUPABASE_URL").rstrip("/")
 supabase_key      = os.getenv("SUPABASE_KEY")
 
-REAL_URL          = "https://contractguard-5sm3.onrender.com"
+REAL_URL          = "https://mycontractguard.com"
 PRODUCT_PRICE     = 500  # $5.00 in cents
 PRODUCT_NAME      = "Contract Analysis"
 
@@ -268,5 +268,6 @@ if st.session_state.analysis_output and st.session_state.just_paid:
         st.success("Download started")
     # Clear just_paid after display
     st.session_state.pop("just_paid", None)
-ing elif st.query_params.get("canceled"):
+
+elif st.query_params.get("canceled"):
     st.warning("⚠️ Payment canceled.")
