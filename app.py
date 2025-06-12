@@ -77,87 +77,159 @@ for k, v in {
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────────
 def extract_text_and_hash(uploaded):
-    data = uploaded.read(); h = hashlib.sha256(data).hexdigest(); uploaded.seek(0)
+    data = uploaded.read()
+    h = hashlib.sha256(data).hexdigest()
+    uploaded.seek(0)
     if uploaded.type == "application/pdf":
         with pdfplumber.open(BytesIO(data)) as pdf:
             text = "\n".join(p.extract_text() or "" for p in pdf.pages)
     else:
-        doc = docx.Document(BytesIO(data)); text = "\n".join(p.text for p in doc.paragraphs)
+        doc = docx.Document(BytesIO(data))
+        text = "\n".join(p.text for p in doc.paragraphs)
     return text, h
 
-PROMPT = {
-    "preview": "You're a legal assistant. Based on this partial contract, give 4-5 bullet points of potential issues. Only use the first 1000 chars.\nPartial Contract:\n",
-    "full": "You are a senior legal advisor. Provide a concise markdown summary of this contract:\n1. Key clauses...\nContract:"}
-
+# ─── OPENAI CLIENT ─────────────────────────────────────────────────────────────
 client = OpenAI(api_key=openai_api_key)
 
+# ─── ACTIONS ─────────────────────────────────────────────────────────────────────
+PROMPT = {
+    "preview": (
+        "You're a legal assistant. Based on this partial contract, give 4-5 bullet points of potential issues. "
+        "Only use the first 1000 chars.\nPartial Contract:\n"
+    ),
+    "full": (
+        "You are a senior legal advisor. Provide a concise markdown summary of this contract:\n"
+        "1. Key clauses...\nContract:"
+    )
+}
+
 def analyze_preview(text):
-    prompt = PROMPT["preview"] + text[:1000]
-    res = client.chat.completions.create(model="gpt-3.5-turbo",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.2, max_tokens=300)
+    res = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role":"user","content":PROMPT["preview"] + text[:1000]}],
+        temperature=0.2,
+        max_tokens=300
+    )
     return res.choices[0].message.content
 
+
 def analyze_contract(text):
-    prompt = PROMPT["full"] + text[:8000]
-    res = client.chat.completions.create(model="gpt-4",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.3)
+    res = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role":"user","content":PROMPT["full"] + text[:8000]}],
+        temperature=0.3
+    )
     return res.choices[0].message.content
 
 # ─── SUPABASE CRUD ──────────────────────────────────────────────────────────────
 def supabase_get(table, field, val):
-    hdr={"apikey":supabase_key,"Authorization":f"Bearer {supabase_key}"}
-    url=f"{supabase_url}/rest/v1/{table}?{field}=eq.{val}"
-    r=requests.get(url,headers=hdr); return r.json() if r.status_code==200 else []
-def get_summary(hash): return supabase_get("summaries","file_hash",hash)[0].get("summary","") if supabase_get("summaries","file_hash",hash) else ""
-def file_paid(hash): return bool(supabase_get("paid_files","file_hash",hash)))
-def save(table,payload):
-    hdr={"apikey":supabase_key,"Authorization":f"Bearer {supabase_key}","Content-Type":"application/json","Prefer":"resolution=merge-duplicates"}
-    requests.post(f"{supabase_url}/rest/v1/{table}",json=payload,headers=hdr)
+    hdr = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+    url = f"{supabase_url}/rest/v1/{table}?{field}=eq.{val}"
+    r = requests.get(url, headers=hdr)
+    return r.json() if r.status_code == 200 else []
+
+def get_summary_by_hash(fhash):
+    rows = supabase_get("summaries", "file_hash", fhash)
+    return rows[0].get("summary", "") if rows else ""
+
+def file_paid(fhash):
+    return bool(supabase_get("paid_files", "file_hash", fhash))
+
+def get_contract_text_by_hash(fhash):
+    rows = supabase_get("uploaded_contracts", "file_hash", fhash)
+    return rows[0].get("text", "") if rows else ""
+
+def save_to_table(table, payload):
+    hdr = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+    requests.post(f"{supabase_url}/rest/v1/{table}", json=payload, headers=hdr)
 
 # ─── STRIPE REDIRECT HANDLER ────────────────────────────────────────────────────
 if st.query_params.get("success") and st.query_params.get("hash"):
-    h=st.query_params["hash"]; txt=get_contract_text_by_hash(h)
-    if txt:
-        st.session_state.contract_text, st.session_state.file_hash = txt, h
-        if not get_summary(h):
-            st.session_state.just_paid=True; st.success("✅ Payment confirmed. Generating analysis...")
+    fhash = st.query_params["hash"]
+    text = get_contract_text_by_hash(fhash)
+    if text:
+        st.session_state.contract_text = text
+        st.session_state.file_hash = fhash
+        if not get_summary_by_hash(fhash):
+            st.session_state.just_paid = True
+            st.success("✅ Payment confirmed. Generating full analysis...")
             with st.spinner("Analyzing..."):
-                out=analyze_contract(txt)
-                st.session_state.analysis_output=out; save("summaries",{"file_hash":h,"summary":out}); save("paid_files",{"file_hash":h})
+                summary = analyze_contract(text)
+                st.session_state.analysis_output = summary
+                save_to_table("summaries", {"file_hash": fhash, "summary": summary})
+                save_to_table("paid_files", {"file_hash": fhash})
         else:
-            st.session_state.analysis_output=get_summary(h)
+            st.session_state.analysis_output = get_summary_by_hash(fhash)
 
-# ─── SHOW FULL ANALYSIS IMMEDIATELY IF JUST PAID ─────────────────────────────────
+# ─── DISPLAY FULL ANALYSIS IMMEDIATELY AFTER PAYMENT ─────────────────────────────
 if st.session_state.just_paid:
-    st.markdown("---"); st.subheader("🔍 Contract Summary & Suggestions"); st.markdown(st.session_state.analysis_output)
-    pdf=FPDF(); pdf.add_page(); pdf.set_auto_page_break(True,margin=15); pdf.set_font("Arial",12)
-    for line in st.session_state.analysis_output.split("\n"): pdf.multi_cell(0,8,line)
-    buf=BytesIO(pdf.output(dest="S").encode("latin1"))
-    if st.download_button("📄 Download as PDF",buf,"summary.pdf","application/pdf"): st.success("Download started")
-    st.session_state.just_paid=False
+    st.markdown("---")
+    st.subheader("🔍 Contract Summary & Suggestions")
+    st.markdown(st.session_state.analysis_output)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(True, margin=15)
+    pdf.set_font("Arial", size=12)
+    for line in st.session_state.analysis_output.split("\n"):
+        pdf.multi_cell(0, 8, line)
+    buf = BytesIO(pdf.output(dest="S").encode("latin1"))
+    if st.download_button("📄 Download as PDF", buf, "summary.pdf", "application/pdf"):
+        st.success("Download started")
+    st.session_state.just_paid = False
     st.stop()
 
 # ─── UPLOAD WIDGET ───────────────────────────────────────────────────────────────
-up=st.file_uploader("Upload PDF or DOCX",type=["pdf","docx"])
-if up:
-    txt,h=extract_text_and_hash(up); st.session_state.contract_text, st.session_state.file_hash = txt, h; save("uploaded_contracts",{"file_hash":h,"text":txt})
-    st.session_state.analysis_output=""; st.session_state.just_paid=False
-    if get_summary(h): st.session_state.analysis_output=get_summary(h)
+upload = st.file_uploader("Upload PDF or DOCX", type=["pdf", "docx"])
+if upload:
+    txt, fhash = extract_text_and_hash(upload)
+    st.session_state.contract_text = txt
+    st.session_state.file_hash = fhash
+    # Persist upload
+    save_to_table("uploaded_contracts", {"file_hash": fhash, "text": txt})
+    st.session_state.analysis_output = ""
+    st.session_state.just_paid = False
+    if get_summary_by_hash(fhash):
+        st.session_state.analysis_output = get_summary_by_hash(fhash)
 
-# ─── PREVIEW & PURCHASE or PREVIOUSLY SAVED ─────────────────────────────────────
+# ─── FREE PREVIEW & PURCHASE vs PREVIOUSLY SAVED ─────────────────────────────────
 if st.session_state.contract_text:
-    st.markdown("---"); st.info(f"📄 Uploaded: {st.session_state.uploaded_filename}"); st.code(st.session_state.contract_text[:500])
-    paid=file_paid(st.session_state.file_hash)
+    st.markdown("---")
+    st.info(f"📄 Uploaded: {st.session_state.uploaded_filename}")
+    st.write("### Contract Preview")
+    st.code(st.session_state.contract_text[:500])
+
+    paid = file_paid(st.session_state.file_hash)
+
     if not paid:
-        st.markdown("### 🕵️ Preview Analysis (Free)"); st.markdown(analyze_preview(st.session_state.contract_text))
+        # Free preview
+        st.markdown("### 🕵️ Preview Analysis (Free)")
+        st.markdown(analyze_preview(st.session_state.contract_text))
+        # Purchase option
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Pay Now"):
-            sess=stripe.checkout.Session.create(
+            session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
-                line_items=[{'price_data':{'currency':'usd','product_data':{'name':PRODUCT_NAME},'unit_amount':PRODUCT_PRICE},'quantity':1}],
-                mode="payment",success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",cancel_url=f"{REAL_URL}?canceled=true")
-            st.session_state.checkout_url=sess.url; st.experimental_rerun()
+                line_items=[{
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {"name": PRODUCT_NAME},
+                        "unit_amount": PRODUCT_PRICE
+                    },
+                    "quantity": 1
+                }],
+                mode="payment",
+                success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
+                cancel_url=f"{REAL_URL}?canceled=true"
+            )
+            st.session_state.checkout_url = session.url
+            st.experimental_rerun()
     else:
-        st.markdown("---"); st.subheader("🔍 Previously Saved Summary & Suggestions"); st.markdown(st.session_state.analysis_output)
+        # Previously saved summary
+        st.markdown("---")
+        st.subheader("🔍 Previously Saved Summary & Suggestions")
+        st.markdown(st.session_state.analysis_output)
