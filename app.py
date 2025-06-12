@@ -30,7 +30,7 @@ PRODUCT_NAME      = "Contract Analysis"
 # ─── STREAMLIT SETUP ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="ContractGuard", page_icon="📄", layout="centered")
 import streamlit.components.v1 as components
-# override any default title immediately
+# Override tab title as early as possible
 components.html("<script>document.title = 'ContractGuard';</script>", height=0)
 
 # ─── LANDING & TESTIMONIALS ──────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ No subscriptions. No email required. Just straight-up analysis.
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
 for k, default in {
     "contract_text": "", "uploaded_filename": "", "analysis_output": "",
-    "file_hash": "", "just_paid": False
+    "file_hash": "", "checkout_url": None, "just_paid": False
 }.items():
     st.session_state.setdefault(k, default)
 
@@ -105,7 +105,10 @@ PROMPT_FULL = (
     "4. Suggestions for negotiation.\n\nContract:\n"
 )
 
+# ─── ANALYSIS FUNCTIONS ──────────────────────────────────────────────────────────
 def analyze_preview(text):
+    p = st.progress(0)
+    p.progress(10)
     with st.spinner("Generating preview..."):
         res = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -113,16 +116,22 @@ def analyze_preview(text):
             temperature=0.2,
             max_tokens=300
         )
+    p.progress(100)
+    p.empty()
     return res.choices[0].message.content
 
 
 def analyze_contract(text):
+    p = st.progress(0)
+    p.progress(10)
     with st.spinner("Generating full analysis..."):
         res = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role":"user","content":PROMPT_FULL + text[:8000]}],
             temperature=0.3
         )
+    p.progress(100)
+    p.empty()
     return res.choices[0].message.content
 
 # ─── SUPABASE CRUD ──────────────────────────────────────────────────────────────
@@ -223,8 +232,12 @@ if st.session_state.contract_text:
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            # redirect to Checkout
-            components.html(f"<script>window.location.href='{session.url}';</script>", height=0)
+            st.session_state.checkout_url = session.url
+        # show link if URL set
+        if st.session_state.get("checkout_url"):
+            st.markdown("---")
+            st.success("✅ Stripe checkout link generated:")
+            st.markdown(f"[Click here to pay now →]({st.session_state.checkout_url})", unsafe_allow_html=True)
     else:
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
