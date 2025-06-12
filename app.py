@@ -9,8 +9,9 @@ from io import BytesIO
 from dotenv import load_dotenv
 from fpdf import FPDF
 from openai import OpenAI
+import streamlit.components.v1 as components
 
-# ─── LOAD ENV AND CHECK ──────────────────────────────────────────────────────────
+# ─── LOAD ENV AND CHECK ─────────────────────────────────────────────────────────
 load_dotenv()
 REQUIRED = ["STRIPE_API_KEY", "OPENAI_API_KEY", "SUPABASE_URL", "SUPABASE_KEY"]
 missing = [v for v in REQUIRED if not os.getenv(v)]
@@ -29,9 +30,9 @@ PRODUCT_NAME      = "Contract Analysis"
 
 # ─── STREAMLIT SETUP ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="ContractGuard", page_icon="📄", layout="centered")
-import streamlit.components.v1 as components
-# Override tab title as early as possible
-components.html("<script>document.title = 'ContractGuard';</script>", height=0)
+# Override default browser tab title
+tab_title_script = "<script>document.title = 'ContractGuard';</script>"
+components.html(tab_title_script, height=0)
 
 # ─── LANDING & TESTIMONIALS ──────────────────────────────────────────────────────
 st.markdown("""
@@ -72,7 +73,7 @@ No subscriptions. No email required. Just straight-up analysis.
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
 for k, default in {
     "contract_text": "", "uploaded_filename": "", "analysis_output": "",
-    "file_hash": "", "checkout_url": None, "just_paid": False
+    "file_hash": "", "just_paid": False
 }.items():
     st.session_state.setdefault(k, default)
 
@@ -232,12 +233,8 @@ if st.session_state.contract_text:
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            st.session_state.checkout_url = session.url
-        # show link if URL set
-        if st.session_state.get("checkout_url"):
-            st.markdown("---")
-            st.success("✅ Stripe checkout link generated:")
-            st.markdown(f"[Click here to pay now →]({st.session_state.checkout_url})", unsafe_allow_html=True)
+            # Redirect browser to Stripe checkout
+            components.html(f"<script>window.location.href='{session.url}';</script>", height=0)
     else:
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
