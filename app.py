@@ -233,8 +233,12 @@ if st.session_state.contract_text:
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            # Redirect browser to Stripe checkout
-            components.html(f"<script>window.location.href='{session.url}';</script>", height=0)
+            st.session_state.checkout_url = session.url
+        # show Stripe checkout link for manual click
+        if st.session_state.get("checkout_url"):
+            st.markdown("---")
+            st.success("✅ Stripe checkout link generated:")
+            st.markdown(f"[Click here to pay now →]({st.session_state.checkout_url})", unsafe_allow_html=True)
     else:
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
