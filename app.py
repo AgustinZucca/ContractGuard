@@ -28,8 +28,9 @@ PRODUCT_PRICE     = 500  # $5 in cents
 PRODUCT_NAME      = "Contract Analysis"
 
 # ─── STREAMLIT SETUP ────────────────────────────────────────────────────────────
-st.set_page_config(page_title="ContractGuard", layout="centered")
+st.set_page_config(page_title="ContractGuard", page_icon="📄", layout="centered")
 import streamlit.components.v1 as components
+# override any default title immediately
 components.html("<script>document.title = 'ContractGuard';</script>", height=0)
 
 # ─── LANDING & TESTIMONIALS ──────────────────────────────────────────────────────
@@ -69,11 +70,11 @@ No subscriptions. No email required. Just straight-up analysis.
 """)
 
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
-for k, v in {
-    "contract_text":"", "uploaded_filename":"", "analysis_output":"",
-    "file_hash":"", "checkout_url":None, "just_paid":False
+for k, default in {
+    "contract_text": "", "uploaded_filename": "", "analysis_output": "",
+    "file_hash": "", "just_paid": False
 }.items():
-    st.session_state.setdefault(k, v)
+    st.session_state.setdefault(k, default)
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────────
 def extract_text_and_hash(uploaded):
@@ -82,7 +83,7 @@ def extract_text_and_hash(uploaded):
     uploaded.seek(0)
     if uploaded.type == "application/pdf":
         with pdfplumber.open(BytesIO(data)) as pdf:
-            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
     else:
         doc = docx.Document(BytesIO(data))
         text = "\n".join(p.text for p in doc.paragraphs)
@@ -91,34 +92,37 @@ def extract_text_and_hash(uploaded):
 # ─── OPENAI CLIENT ─────────────────────────────────────────────────────────────
 client = OpenAI(api_key=openai_api_key)
 
-# ─── ACTIONS ─────────────────────────────────────────────────────────────────────
-PROMPT = {
-    "preview": (
-        "You're a legal assistant. Based on this partial contract, give 4-5 bullet points of potential issues. "
-        "Only use the first 1000 chars.\nPartial Contract:\n"
-    ),
-    "full": (
-        "You are a senior legal advisor. Provide a concise markdown summary of this contract:\n"
-        "1. Key clauses...\nContract:"
-    )
-}
+# ─── PROMPTS ─────────────────────────────────────────────────────────────────────
+PROMPT_PREVIEW = (
+    "You're a legal assistant. Based on this partial contract, give 4-5 bullet points of potential issues. "
+    "Only use the first 1000 chars.\nPartial Contract:\n"
+)
+PROMPT_FULL = (
+    "You are a senior legal advisor. Provide a concise markdown summary of this contract:\n"
+    "1. Key clauses: Payment Terms, Termination, Scope of Work, etc.\n"
+    "2. Unclear/risky language with quotes + brief notes.\n"
+    "3. Risk Level (Low/Medium/High) with reasoning.\n"
+    "4. Suggestions for negotiation.\n\nContract:\n"
+)
 
 def analyze_preview(text):
-    res = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role":"user","content":PROMPT["preview"] + text[:1000]}],
-        temperature=0.2,
-        max_tokens=300
-    )
+    with st.spinner("Generating preview..."):
+        res = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role":"user","content":PROMPT_PREVIEW + text[:1000]}],
+            temperature=0.2,
+            max_tokens=300
+        )
     return res.choices[0].message.content
 
 
 def analyze_contract(text):
-    res = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role":"user","content":PROMPT["full"] + text[:8000]}],
-        temperature=0.3
-    )
+    with st.spinner("Generating full analysis..."):
+        res = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role":"user","content":PROMPT_FULL + text[:8000]}],
+            temperature=0.3
+        )
     return res.choices[0].message.content
 
 # ─── SUPABASE CRUD ──────────────────────────────────────────────────────────────
@@ -128,16 +132,20 @@ def supabase_get(table, field, val):
     r = requests.get(url, headers=hdr)
     return r.json() if r.status_code == 200 else []
 
+
 def get_summary_by_hash(fhash):
     rows = supabase_get("summaries", "file_hash", fhash)
     return rows[0].get("summary", "") if rows else ""
 
+
 def file_paid(fhash):
     return bool(supabase_get("paid_files", "file_hash", fhash))
+
 
 def get_contract_text_by_hash(fhash):
     rows = supabase_get("uploaded_contracts", "file_hash", fhash)
     return rows[0].get("text", "") if rows else ""
+
 
 def save_to_table(table, payload):
     hdr = {
@@ -157,12 +165,10 @@ if st.query_params.get("success") and st.query_params.get("hash"):
         st.session_state.file_hash = fhash
         if not get_summary_by_hash(fhash):
             st.session_state.just_paid = True
-            st.success("✅ Payment confirmed. Generating full analysis...")
-            with st.spinner("Analyzing..."):
-                summary = analyze_contract(text)
-                st.session_state.analysis_output = summary
-                save_to_table("summaries", {"file_hash": fhash, "summary": summary})
-                save_to_table("paid_files", {"file_hash": fhash})
+            summary = analyze_contract(text)
+            st.session_state.analysis_output = summary
+            save_to_table("summaries", {"file_hash": fhash, "summary": summary})
+            save_to_table("paid_files", {"file_hash": fhash})
         else:
             st.session_state.analysis_output = get_summary_by_hash(fhash)
 
@@ -189,7 +195,6 @@ if upload:
     txt, fhash = extract_text_and_hash(upload)
     st.session_state.contract_text = txt
     st.session_state.file_hash = fhash
-    # Persist upload
     save_to_table("uploaded_contracts", {"file_hash": fhash, "text": txt})
     st.session_state.analysis_output = ""
     st.session_state.just_paid = False
@@ -206,30 +211,21 @@ if st.session_state.contract_text:
     paid = file_paid(st.session_state.file_hash)
 
     if not paid:
-        # Free preview
         st.markdown("### 🕵️ Preview Analysis (Free)")
-        st.markdown(analyze_preview(st.session_state.contract_text))
-        # Purchase option
+        preview = analyze_preview(st.session_state.contract_text)
+        st.markdown(preview)
         st.markdown("### 🔐 Unlock Full Analysis for $5")
         if st.button("Pay Now"):
             session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
-                line_items=[{
-                    "price_data": {
-                        "currency": "usd",
-                        "product_data": {"name": PRODUCT_NAME},
-                        "unit_amount": PRODUCT_PRICE
-                    },
-                    "quantity": 1
-                }],
+                line_items=[{'price_data':{'currency':'usd','product_data':{'name':PRODUCT_NAME},'unit_amount':PRODUCT_PRICE},'quantity':1}],
                 mode="payment",
                 success_url=f"{REAL_URL}?success=true&hash={st.session_state.file_hash}",
                 cancel_url=f"{REAL_URL}?canceled=true"
             )
-            st.session_state.checkout_url = session.url
-            st.experimental_rerun()
+            # redirect to Checkout
+            components.html(f"<script>window.location.href='{session.url}';</script>", height=0)
     else:
-        # Previously saved summary
         st.markdown("---")
         st.subheader("🔍 Previously Saved Summary & Suggestions")
         st.markdown(st.session_state.analysis_output)
