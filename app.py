@@ -71,7 +71,7 @@ if not is_success:
     ---
 
     🛡️ **Private by default.** Your contract is processed securely and never stored permanently.
-    📬 **Feedback welcome!** Got ideas? Drop them [here](mailto:support@contractguard.com).
+    📬 **Feedback welcome!** Got ideas? Drop them [here](mailto:admin@mycontractguard.com).
     """)
 
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
