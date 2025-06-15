@@ -121,15 +121,25 @@ client = OpenAI(api_key=openai_api_key)
 
 # ─── PROMPTS ─────────────────────────────────────────────────────────────────────
 PROMPT_PREVIEW = (
-    "You're a legal assistant. Based on this partial contract, give 4-5 bullet points of potential issues. "
-    "Only use the first 1000 chars.\nPartial Contract:\n"
+    "You're an AI assistant trained to spot issues in freelance service agreements.\n\n"
+    "Based only on the first 1000 characters of the following contract, identify 4-5 possible concerns or ambiguities. "
+    "Use bullet points and be concise.\n\nPartial Contract:\n"
 )
+
 PROMPT_FULL = (
-    "You are a senior legal advisor. Provide a concise markdown summary of this contract:\n"
-    "1. Key clauses: Payment Terms, Termination, Scope of Work, etc.\n"
-    "2. Unclear/risky language with quotes + brief notes.\n"
-    "3. Risk Level (Low/Medium/High) with reasoning.\n"
-    "4. Suggestions for negotiation.\n\nContract:\n"
+    "You are an AI assistant trained in reviewing freelance service agreements.\n\n"
+    "Analyze the contract below and provide a structured, plain-language summary in markdown format with these sections:\n\n"
+    "1. **Key Clauses Summary**\n"
+    "- Summarize important clauses like: Payment Terms, Termination, Scope of Work, Non-compete, IP rights, and Deliverables.\n\n"
+    "2. **Potential Issues or Ambiguities**\n"
+    "- Quote any vague or risky wording and briefly explain why it may be a concern.\n\n"
+    "3. **Risk Rating**\n"
+    "- Rate the overall risk to the freelancer (Low, Medium, High) with 1–2 sentences explaining your assessment.\n\n"
+    "4. **Suggestions to Consider**\n"
+    "- Offer brief, actionable suggestions the freelancer could bring up with the client or ask a lawyer about.\n\n"
+    "**Important:**\n"
+    "Do NOT state or imply that this is legal advice. Focus on clarity and contract comprehension for a freelancer audience.\n\n"
+    "Contract:\n"
 )
 
 # ─── ANALYSIS FUNCTIONS ──────────────────────────────────────────────────────────
