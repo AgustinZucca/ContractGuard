@@ -276,3 +276,18 @@ if not is_success:
             st.markdown("---")
             st.subheader("🔍 Previously Saved Summary & Suggestions")
             st.markdown(st.session_state.analysis_output)
+
+
+st.markdown("""
+<hr style="margin-top:3em;margin-bottom:0.5em;border:0;border-top:2px solid #eee"/>
+<div style='display: flex; align-items: center; gap: 1.5em; justify-content: center; margin-top: 1em; margin-bottom: 2em;'>
+    <div style='text-align:center'>
+        <img src='https://static.thenounproject.com/png/2595260-200.png' width='48' style='margin-bottom:0.3em' alt='SSL Encryption'/>
+        <div style='font-size:0.98em; color:#4CAF50; font-weight:500;'>SSL Encrypted</div>
+    </div>
+    <div style='text-align:center'>
+        <img src='https://stripe.com/img/v3/home/social.png' width='70' style='margin-bottom:0.3em' alt='Stripe Payments'/>
+        <div style='font-size:0.98em; color:#635bff; font-weight:500;'>Powered by Stripe</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
