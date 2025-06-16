@@ -53,7 +53,7 @@ def load_lottie_url(url):
         return r.json()
     return None
 
-lottie_contract = load_lottie_url("https://assets2.lottiefiles.com/packages/lf20_0yfsb3a1.json")  # Free-to-use contract Lottie
+lottie_contract = load_lottie_url("https://lottie.host/bc3660d7-d732-4050-9a49-14463af9cfa9/l6l0qarVZt.json")  # Free-to-use contract Lottie
 
 # determine if this is a payment redirect
 is_success = bool(st.query_params.get("success") and st.query_params.get("hash"))
@@ -93,7 +93,7 @@ Always consult a qualified professional before signing important contracts.
         st.markdown("""
 I'm a freelancer who got burned by bad contracts.  
 I built ContractGuard so others don’t go through the same.  
-Questions? Email [support@contractguard.com](mailto:support@contractguard.com)  
+Questions? Email [admin@contractguard.com](mailto:admin@contractguard.com)  
         """)
 
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
