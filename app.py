@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fpdf import FPDF
 from openai import OpenAI
 import streamlit.components.v1 as components
+from streamlit_lottie import st_lottie
 
 # ─── LOAD ENV AND CHECK ─────────────────────────────────────────────────────────
 load_dotenv()
@@ -33,6 +34,26 @@ st.set_page_config(page_title="ContractGuard", page_icon="📄", layout="centere
 # Override default browser tab title
 tab_title_script = "<script>document.title = 'ContractGuard';</script>"
 components.html(tab_title_script, height=0)
+components.html("""
+<style>
+.fade-in {
+  animation: fadeIn 1s ease-in;
+}
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+</style>
+""", height=0)
+
+# ─── LOTTIE ANIMATION LOADER ─────────────────────────────────────────────────────
+def load_lottie_url(url):
+    r = requests.get(url)
+    if r.status_code == 200:
+        return r.json()
+    return None
+
+lottie_contract = load_lottie_url("https://assets2.lottiefiles.com/packages/lf20_0yfsb3a1.json")  # Free-to-use contract Lottie
 
 # determine if this is a payment redirect
 is_success = bool(st.query_params.get("success") and st.query_params.get("hash"))
@@ -40,6 +61,9 @@ is_success = bool(st.query_params.get("success") and st.query_params.get("hash")
 # ─── LANDING & TESTIMONIALS (hidden after payment) ───────────────────────────────
 if not is_success:
     st.title("📄 ContractGuard – Fast AI Contract Summaries for Freelancers")
+    # Add animation under title
+    if lottie_contract:
+        st_lottie(lottie_contract, height=140, key="contract_anim")
     st.subheader("_Tired of deciphering vague contracts? Let AI do the first pass._")
 
     with st.expander("✅ What You’ll Get", expanded=True):
@@ -72,12 +96,10 @@ I built ContractGuard so others don’t go through the same.
 Questions? Email [support@contractguard.com](mailto:support@contractguard.com)  
         """)
 
-
-
 # ─── SESSION STATE ─────────────────────────────────────────────────────────────
 for k, default in {
     "contract_text": "", "uploaded_filename": "", "analysis_output": "",
-    "file_hash": "", "just_paid": False
+    "file_hash": "", "just_paid": False, "checkout_url": None
 }.items():
     st.session_state.setdefault(k, default)
 
@@ -132,7 +154,6 @@ def analyze_preview(text):
         )
     p.progress(100); p.empty()
     return res.choices[0].message.content
-
 
 def analyze_contract(text):
     p = st.progress(0); p.progress(10)
@@ -228,6 +249,16 @@ if not is_success:
             preview = analyze_preview(st.session_state.contract_text)
             st.markdown(preview)
             st.markdown("### 🔐 Unlock Full Analysis for $5")
+            # Stripe badge and logo for trust
+            st.markdown(
+                """
+                <div style='display:flex;align-items:center;gap:0.7em;margin-bottom:1em'>
+                    <img src='https://stripe.com/img/v3/home/social.png' alt='Stripe Logo' width='85'/>
+                    <span style='color:#6c757d;font-size:1em'>Payments securely processed by Stripe</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             if st.button("Pay Now"):
                 session = stripe.checkout.Session.create(
                     payment_method_types=["card"],
